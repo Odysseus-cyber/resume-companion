@@ -1,0 +1,20 @@
+:root {
+  --canvas: #f9faf6;
+  --ink: #34422f;
+  --green: #345c43;
+  --border: #e3e8db;
+  --muted: #8a9581;
+}
+.brand-wordmark {
+  font-size: 18px;
+  line-height: 1.1;
+  letter-spacing: -0.4px;
+}
+.brand.small .brand-wordmark {
+  font-size: 16px;
+}
+.brand .brand-wordmark small {
+  font-size: 6px;
+  letter-spacing: 0.8px;
+  margin-top: 6px;
+}

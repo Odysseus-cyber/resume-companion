@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>本地安装 · Resume Companion</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <nav aria-label="主导航">
+      <a class="brand" href="index.html"
+        ><span class="mark" aria-hidden="true">R</span>Resume Companion</a
+      >
+      <div class="navlinks">
+        <a href="index.html#how">如何使用</a><a href="support.html">支持范围</a
+        ><a class="optional" href="privacy.html">隐私说明</a>
+      </div>
+    </nav>
+    <main class="article">
+      <div class="eyebrow">Start locally</div>
+      <h1>先在自己的浏览器里试试</h1>
+      <p>当前为开发预览版，暂无商店下载。拿到项目源码后，按以下步骤构建并加载。</p>
+      <h2>1. 准备开发环境</h2>
+      <p>安装 Node.js 22 或更高版本，以及 package.json 指定版本的 pnpm。在项目目录执行：</p>
+      <pre><code>bash scripts/dev.sh install --frozen-lockfile
+bash scripts/dev.sh build
+bash scripts/dev.sh build:edge</code></pre>
+      <p>脚本把缓存、临时文件和测试浏览器资料集中放在项目 .dev 目录。它不需要云账号或数据库。</p>
+      <h2>2. 加载扩展</h2>
+      <p>
+        在 Chrome 的 chrome://extensions 或 Edge 的 edge://extensions
+        开启开发者模式，选择“加载已解压的扩展程序”，加载项目 .output/chrome-mv3 或 .output/edge-mv3
+        目录。
+      </p>
+      <h2>3. 准备资料</h2>
+      <p>
+        固定扩展图标，点击打开侧边栏，再打开资料管理页。手动建立简历或导入文本型 PDF / DOCX /
+        TXT。逐项核对再保存，AI 无需开启。
+      </p>
+      <h2>4. 识别与核对</h2>
+      <p>
+        打开网申页面，再次点击扩展图标，识别当前页面。检查映射和拟填内容，选择需要填写的字段。填写后回到网页核对，必要时撤销。插件不会替你提交。
+      </p>
+      <details>
+        <summary>能直接用虚构演示吗？</summary>
+        <p>
+          可以在本地测试页面使用虚构演示简历。演示资料不会写入个人简历数据库，也不能用于真实招聘网站，避免误投。
+        </p>
+      </details>
+      <details>
+        <summary>以后怎样清理？</summary>
+        <p>
+          先导出加密备份并停止开发服务。项目的清理脚本提供预览、生成产物清理和完整依赖清理模式；具体见
+          docs/development.md。需要时在测试浏览器中移除扩展。
+        </p>
+      </details>
+      <details>
+        <summary>浏览器重开后 API Key 为什么没有了？</summary>
+        <p>API Key 仅保存在扩展会话中，需要时重新输入。核心本地功能不受影响。</p>
+      </details>
+    </main>
+    <footer>
+      <div class="container footer-row">
+        <span>Resume Companion · MIT 开源</span>
+        <div>
+          <a href="privacy.html">隐私说明</a><a href="support.html">支持范围</a
+          ><a href="install.html">本地安装</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <title>个人资料 · 虚构招聘表单</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      margin: 32px;
+    }
+    form {
+      display: grid;
+      grid-template-columns: 140px 400px;
+      gap: 20px;
+    }
+    input,
+    select,
+    [role='combobox'] {
+      min-height: 38px;
+      border: 1px solid #999;
+      padding: 6px;
+    }
+  </style>
+  <form>
+    <div>现居住地</div>
+    <div>
+      <div><input data-fixture="city" /></div>
+    </div>
+    <div>最高学历</div>
+    <div>
+      <select data-fixture="highestEducation">
+        <option value="">请选择</option>
+        <option value="master">硕士</option>
+        <option value="bachelor">本科</option>
+      </select>
+    </div>
+    <div>学习形式</div>
+    <div><input data-fixture="studyMode" /></div>
+    <div>户口所在地</div>
+    <div><input data-fixture="householdLocation" value="网页私密户籍" /></div>
+    <div>民族</div>
+    <div role="combobox" data-fixture="ethnicity" tabindex="0"></div>
+    <div>政治面貌</div>
+    <div><input data-fixture="politics" /></div>
+    <div>其他说明</div>
+    <div><input data-fixture="omitted" /></div>
+    <div>毕业时间</div>
+    <div><input data-fixture="unsupported" readonly /></div>
+    <div>证明编号</div>
+    <div><input data-fixture="invalid" /></div>
+  </form>
+  <script>
+    // A validation message and layout shift after the first fill must not stop later targets.
+    document.querySelector('[data-fixture="city"]').addEventListener('input', (event) => {
+      if (document.querySelector('[data-fixture="validation"]')) return;
+      const hint = document.createElement('div');
+      hint.dataset.fixture = 'validation';
+      hint.textContent = '已检查城市信息';
+      hint.style.marginTop = '20px';
+      event.target.parentElement.append(hint);
+      event.target.setAttribute('aria-invalid', 'false');
+    });
+  </script>
+</html>

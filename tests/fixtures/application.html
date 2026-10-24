@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><title>示例科技 · 校招申请（虚构测试页）</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      max-width: 700px;
+      margin: 40px auto;
+      background: #f7faf6;
+      color: #34422f;
+    }
+    label {
+      display: block;
+      margin: 16px 0;
+    }
+    input,
+    select,
+    textarea {
+      padding: 8px;
+      display: block;
+      min-width: 280px;
+    }
+    fieldset {
+      margin: 24px 0;
+      padding: 20px;
+      border: 1px solid #ccd9c6;
+    }
+    button {
+      padding: 12px;
+      margin: 12px;
+    }
+  </style>
+  <h1>示例科技 · 前端开发实习生</h1>
+  <p>本页使用虚构资料，用于扩展自动化验证，不代表企业网站适配认证。</p>
+  <form id="application">
+    <label for="name">姓名</label><input id="name" autocomplete="name" /><label for="email"
+      >电子邮箱</label
+    ><input id="email" type="email" autocomplete="email" /><label for="phone">手机号码</label
+    ><input id="phone" type="tel" /><label for="city">现居城市</label
+    ><input id="city" value="用户原有城市" />
+    <fieldset data-section="education">
+      <legend>教育经历 1</legend>
+      <label for="school">学校名称</label><input id="school" /><label for="major">专业</label
+      ><input id="major" /><label for="degree">学历</label
+      ><select id="degree">
+        <option value="">请选择</option>
+        <option value="bachelor">本科</option>
+        <option value="master">硕士</option></select
+      ><label for="start">开始日期</label><input id="start" type="month" /><label for="end"
+        >结束日期</label
+      ><input id="end" type="month" />
+    </fieldset>
+    <fieldset data-section="projects">
+      <legend>项目经历 1</legend>
+      <label for="project">项目名称</label><input id="project" /><label for="description"
+        >项目描述</label
+      ><textarea id="description"></textarea>
+    </fieldset>
+    <label for="captcha">验证码</label><input id="captcha" /><button type="button" id="add">
+      新增项目区域</button
+    ><button type="submit">提交申请（测试）</button>
+  </form>
+  <script>
+    window.submissions = 0;
+    document.querySelector('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      window.submissions++;
+    });
+    document.getElementById('add').onclick = () => {
+      const f = document.createElement('fieldset');
+      f.dataset.section = 'projects';
+      f.innerHTML =
+        '<legend>项目经历 2</legend><label for="project2">项目名称</label><input id="project2">';
+      document.getElementById('add').before(f);
+    };
+  </script>
+</html>

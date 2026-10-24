@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>隐私说明 · Resume Companion</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <nav aria-label="主导航">
+      <a class="brand" href="index.html"
+        ><span class="mark" aria-hidden="true">R</span>Resume Companion</a
+      >
+      <div class="navlinks">
+        <a href="index.html#how">如何使用</a><a href="support.html">支持范围</a
+        ><a class="optional" href="privacy.html">隐私说明</a>
+      </div>
+    </nav>
+    <main class="article">
+      <div class="eyebrow">Your data, your choice</div>
+      <h1>你的资料，如何被使用</h1>
+      <p>适用版本：0.2.3 开发预览 · 更新日期：2026-10-24</p>
+      <div class="notice">
+        本说明对应当前开源开发预览版，由 Odysseus-cyber 维护；目前尚无商店发布版。
+      </div>
+      <h2>1. 本地管理简历</h2>
+      <p>
+        简历、简历版本、字段映射和设置存放在浏览器扩展
+        <code>storage.local</code>。项目不提供账号、云同步或服务器简历库，也不包含分析与遥测 SDK。
+      </p>
+      <p>
+        本地数据库本身不加密。你可以导出密码加密备份；卸载扩展、清除浏览器资料或切换配置文件后，本地资料可能无法保留。备份密码无法由项目恢复。
+      </p>
+      <h2>2. 网页读取与填写</h2>
+      <p>
+        在你点击识别后，扩展在本地读取当前表单的文字、控件布局、选项、当前值与页面地址，用于识别、保护已有内容和校验。AI
+        模式独立采集顶层已展开表单的文字块、控件坐标、父子层级和顺序，不依赖规则识别出正确标签。完整简历库不交给页面脚本；执行时只发送当次填写所需内容。手动映射按站点
+        origin 和字段签名保存在本地。
+      </p>
+      <p>
+        插件不自动提交申请。填入招聘网站页面的资料可以被该网站读取，其脚本可能在你提交前保存或发送资料。招聘网站的数据处理由该网站的隐私条款约束。
+      </p>
+      <h2>3. 文件导入</h2>
+      <p>
+        文本型 PDF、DOCX 和 TXT
+        在本机解析。原始文件与提取全文不自动保存进简历库；你确认保存后，结构化资料留在本地。扫描 PDF
+        暂无 OCR。简历原文件和提取文本不会发送给 AI；经历需在本地核对和补充。
+      </p>
+      <h2>4. 可选 AI 服务</h2>
+      <p>
+        AI 默认关闭。启用后，需要你填写 HTTPS API 地址、模型和会话 Key。
+        每次发送前展示接收服务和请求内容。AI
+        识别表单位置与含义：请求包含脱敏文字块、控件编号、类型、位置、父子层级和顺序，以及标准资料
+        key、中文含义、类型和经历序号。自定义字段使用临时别名，真实内部 ID 留在本地。
+        点击“确认识别并填写”后，模型返回控件与资料 key
+        的对应关系、判断状态和参考文字编号。插件校验有效匹配项，在本地取得真实资料并自动填写；不确定项、缺少资料及无法操作的控件会跳过。
+      </p>
+      <p>
+        请求不包含简历填写值、网页已填值、选中内容、可编辑区域内容、隐藏数据、完整 HTML、截图、原始
+        DOM 属性或页面 URL。标准资料 key 会发送，例如 personal.name；填写内容不随 key 发送。
+        页面文字会过滤已知简历值、页面已有值及常见敏感模式；任意网站的自定义标签可能含有过滤器无法识别的信息，因此仍需核对发送预览。
+        不再提供向 AI 发送简历全文整理经历的功能。
+      </p>
+      <p>
+        请求直接发送至你指定的服务，没有项目方中转后台。该服务可能保存请求，适用其条款及费用。 API
+        Key 仅存于扩展会话，用于请求鉴权，不放入 AI
+        消息正文、备份或日志；浏览器会话结束后需要重新输入。 AI
+        返回内容经结构校验，不执行脚本或提交申请。自动填写保留网页已有内容，页面布局、资料或控件状态变化会使旧结果失效；AI
+        推断不会自动保存为长期映射。
+      </p>
+      <p>
+        单次最多 500 个候选控件，完整请求正文最多 200
+        KB；超出时停止发送并提示缩小范围，不静默截断。布局与临时编号仅用于本次操作，不写入简历数据库。你可以主动导出无填写值的布局
+        JSON 用于诊断，文件中的页面文字仍需在分享前核对。iframe、Shadow DOM
+        与未展开区域不在本次布局采集范围。
+      </p>
+      <h2>5. 备份、删除与权限</h2>
+      <p>
+        你可以编辑、导出、恢复或清空本地资料，也可在浏览器扩展管理中撤回站点访问权限。加密备份使用
+        AES-GCM 和基于密码的密钥派生；密码至少 8 个字符。恢复前保留独立备份可方便回退。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>权限</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>storage / sidePanel</td>
+            <td>本地保存与侧边栏界面</td>
+          </tr>
+          <tr>
+            <td>activeTab / scripting</td>
+            <td>用户操作后识别与填写当前表单</td>
+          </tr>
+          <tr>
+            <td>可选域名权限</td>
+            <td>按需访问选定站点或用户配置的 AI API；localhost 用于测试</td>
+          </tr>
+        </tbody>
+      </table>
+      <h2>6. 反馈与说明网站</h2>
+      <p>
+        公开 Issue 只应包含虚构或脱敏资料。此静态说明站点没有分析脚本、外部字体或 Cookie
+        功能；未来托管服务可能按其自身政策记录网站访问日志。
+      </p>
+      <p>
+        维护者：<a href="https://github.com/Odysseus-cyber">Odysseus-cyber</a>。普通反馈通过
+        <a href="https://github.com/Odysseus-cyber/resume-companion/issues">GitHub Issues</a
+        >；安全问题请遵循
+        <a href="https://github.com/Odysseus-cyber/resume-companion/blob/main/SECURITY.md"
+          >私密报告指引</a
+        >。商店联系邮箱将在商店发布前配置。
+      </p>
+    </main>
+    <footer>
+      <div class="container footer-row">
+        <span>Resume Companion · MIT 开源</span>
+        <div>
+          <a href="privacy.html">隐私说明</a><a href="support.html">支持范围</a
+          ><a href="install.html">本地安装</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+node_modules/
+.dev/
+.output/
+.wxt/
+.pnpm-store/
+test-results/
+playwright-report/
+coverage/
+.env*
+!.env.example
+.DS_Store
+*.local

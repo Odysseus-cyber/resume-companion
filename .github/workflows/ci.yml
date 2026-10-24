@@ -1,0 +1,44 @@
+name: Validate extension
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies in project store
+        run: ./scripts/dev.sh install --frozen-lockfile
+      - name: Typecheck
+        run: ./scripts/dev.sh run typecheck
+      - name: Lint
+        run: ./scripts/dev.sh run lint
+      - name: Unit and DOM regression tests
+        run: ./scripts/dev.sh run test
+      - name: Build Chrome and Edge
+        run: |
+          ./scripts/dev.sh run build
+          ./scripts/dev.sh run build:edge
+      - name: Install isolated Chromium
+        run: ./scripts/dev.sh exec playwright install --with-deps chromium
+      - name: Browser regression tests
+        run: ./scripts/dev.sh run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-diagnostics
+          path: .dev/reports/
+          include-hidden-files: true
+          retention-days: 7

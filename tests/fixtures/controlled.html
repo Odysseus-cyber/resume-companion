@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+  <meta charset="utf-8" /><title>Controlled input fixture</title
+  ><label for="name">姓名</label
+  ><input id="name" />
+  <script>
+    window.state = { name: '' };
+    const input = document.querySelector('input');
+    input.addEventListener('input', (e) => (window.state.name = e.target.value));
+  </script>
+</html>

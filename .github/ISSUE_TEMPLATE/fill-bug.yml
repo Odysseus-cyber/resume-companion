@@ -1,0 +1,23 @@
+name: 填写错误
+description: 报告识别、填写或撤销问题
+body:
+  - type: markdown
+    attributes:
+      value: '请使用虚构或脱敏资料。不要上传真实简历、API Key、Cookie 或完整网申页面。安全问题请按 SECURITY.md 私密报告。'
+  - type: input
+    id: version
+    attributes:
+      label: 扩展版本、浏览器与操作系统
+    validations:
+      required: true
+  - type: input
+    id: site
+    attributes:
+      label: 网站域名或脱敏测试地址
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤、预期和实际结果
+      description: 请给出字段标签、控件类型及虚构输入；如有可提供最小 HTML 夹具。
+    validations:
+      required: true

@@ -1,0 +1,16 @@
+name: 功能建议
+description: 描述你希望改善的求职填写流程
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前遇到的问题
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望行为和使用场景
+      description: 请勿填写真实个人信息。
+    validations:
+      required: true

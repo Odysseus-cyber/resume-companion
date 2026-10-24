@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Resume Companion：本地保存、免登录的校招简历填写扩展。预览、核对与撤销，由你提交。"
+    />
+    <title>少填一遍，多一点从容 · Resume Companion</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <nav aria-label="主导航">
+      <a class="brand" href="index.html"
+        ><span class="mark" aria-hidden="true">R</span>Resume Companion</a
+      >
+      <div class="navlinks">
+        <a href="index.html#how">如何使用</a><a href="support.html">支持范围</a
+        ><a class="optional" href="privacy.html">隐私说明</a>
+      </div>
+    </nav>
+    <main class="container">
+      <section class="hero">
+        <div>
+          <span class="pill"><span class="dot"></span>本地优先 · 开发预览版</span>
+          <h1>少填一遍，<br /><em>多一点从容。</em></h1>
+          <p class="intro">把简历放在自己手里。<br />把时间留给下一次机会。</p>
+          <div class="actions">
+            <a class="button" href="install.html">本地安装体验 <span aria-hidden="true">↗</span></a
+            ><a class="button secondary" href="#how">看看如何使用</a>
+          </div>
+          <p class="micro">Chrome / Edge · 无需账号 · 核心功能无需 AI</p>
+        </div>
+        <div
+          class="preview"
+          role="img"
+          aria-label="界面示意：虚构姓名、邮箱和学校的填写预览。并非真实产品截图。"
+        >
+          <div class="preview-head">
+            <span>Resume Companion</span><span class="tag">界面示意</span>
+          </div>
+          <h3>准备好，再轻轻一点</h3>
+          <p>本次简历：林知夏 · 虚构演示</p>
+          <div class="field">
+            <div class="field-top"><span>姓名</span><span class="check">✓ 已匹配</span></div>
+            <strong>林知夏</strong>
+          </div>
+          <div class="field">
+            <div class="field-top"><span>电子邮箱</span><span class="check">✓ 已匹配</span></div>
+            <strong>zhixia@example.com</strong>
+          </div>
+          <div class="field">
+            <div class="field-top"><span>毕业院校</span><span class="check">✓ 已匹配</span></div>
+            <strong>示例大学</strong>
+          </div>
+          <div class="preview-bottom">
+            <span class="micro">核对后，才填写</span><span class="button">填写已选 3 项</span>
+          </div>
+          <span class="annotation">资料留在本地，决定留给你。</span>
+        </div>
+      </section>
+      <section class="features" aria-label="产品特点">
+        <article>
+          <div class="feature-num">01 / LOCAL</div>
+          <h3>简历，放在本地</h3>
+          <p>不注册，不用云同步。<br />多个版本，各有安排。</p>
+        </article>
+        <article>
+          <div class="feature-num">02 / REVIEW</div>
+          <h3>先看清，再填写</h3>
+          <p>预览每一项对应资料，<br />有疑问就重新绑定。</p>
+        </article>
+        <article>
+          <div class="feature-num">03 / CONTROL</div>
+          <h3>写进去，也能撤销</h3>
+          <p>保留已有内容，<br />提交前由你做最后核对。</p>
+        </article>
+      </section>
+      <section class="section" id="how">
+        <div class="eyebrow">A little less repetition</div>
+        <h2>一个简历库，<br />让每次网申轻一些。</h2>
+        <p class="section-lead">
+          从资料到表单，把每一步说清楚。复杂控件仍可以手动填写；你的经历，不需要交给不确定的猜测。
+        </p>
+        <div class="steps">
+          <article class="step">
+            <span>01</span>
+            <h3>整理自己的经历</h3>
+            <p>建立简历版本，编辑教育、实习和项目。导入文本型 PDF / DOCX 后，核对再保存。</p>
+          </article>
+          <article class="step">
+            <span>02</span>
+            <h3>预览这一页</h3>
+            <p>
+              打开并展开网申表单。离线模式核对字段对应；AI 模式预览将发送的脱敏页面布局与资料 key。
+            </p>
+          </article>
+          <article class="step">
+            <span>03</span>
+            <h3>填写，然后确认</h3>
+            <p>
+              AI
+              模式确认后自动填写有效匹配项，离线模式填写勾选项。核对结果，必要时撤销；最终申请由你手动提交。
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="support">
+        <div>
+          <h2>从真实问题出发，一起完善。</h2>
+          <p>
+            Moka、北森、飞书招聘目前为实验识别，尚无企业实站验证记录。欢迎用脱敏表单帮助改善兼容性；开源协作与内测正在准备中。
+          </p>
+        </div>
+        <a class="button secondary" href="support.html">了解支持范围 ↗</a>
+      </section>
+      <p class="note">
+        当前为开发预览，尚未上架商店。AI
+        可选且默认关闭；预览并确认后将脱敏的文字块、控件位置与层级、无填写值的资料 key
+        目录发往你配置的服务。插件在本地取值并自动填写有效匹配项，不确定项跳过。发送前请核对预览。普通本地库未加密，请定期导出加密备份。
+      </p>
+    </main>
+    <footer>
+      <div class="container footer-row">
+        <span>Resume Companion · MIT 开源</span>
+        <div>
+          <a href="privacy.html">隐私说明</a><a href="support.html">支持范围</a
+          ><a href="install.html">本地安装</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

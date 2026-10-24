@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <title>布局识别 · 虚构表单</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      margin: 32px;
+    }
+    form {
+      width: 720px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    input,
+    textarea {
+      padding: 10px;
+      width: 90%;
+    }
+    .off {
+      display: none;
+    }
+  </style>
+  <nav>不属于申请表的导航文字</nav>
+  <form>
+    <h2>基本信息</h2>
+    <div class="grid">
+      <div data-fixture="name-label">如何称呼您</div>
+      <div>联系邮箱</div>
+      <div>
+        <div>
+          <div>
+            <div>
+              <div>
+                <div>
+                  <div><input data-fixture="name" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div>
+          <div>
+            <div>
+              <div>
+                <div>
+                  <div><input type="email" data-fixture="email" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <h2>其他资料</h2>
+    <div>出生日期</div>
+    <input readonly data-fixture="birthday" />
+    <div>居住地</div>
+    <input value="网页私密已有城市" data-fixture="city" />
+    <div>补充说明</div>
+    <div contenteditable="true">网页私密编辑内容</div>
+    <div>选择资料</div>
+    <select>
+      <option>网页私密选中内容</option>
+    </select>
+    <div class="off">网页私密隐藏内容</div>
+    <input type="hidden" value="网页私密隐藏值" />
+    <button type="submit">提交申请（测试）</button>
+  </form>
+  <script>
+    window.submissions = 0;
+    document.querySelector('form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      window.submissions++;
+    });
+  </script>
+</html>

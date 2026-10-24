@@ -1,0 +1,20 @@
+name: 站点适配
+description: 请求支持特定网申表单
+body:
+  - type: input
+    id: site
+    attributes:
+      label: 系统名称、企业页面域名
+    validations:
+      required: true
+  - type: textarea
+    id: controls
+    attributes:
+      label: 需要支持的字段或控件
+      description: 描述当前不能填写的内容，附虚构或脱敏的最小示例。不要附登录凭据或真实简历。
+    validations:
+      required: true
+  - type: textarea
+    id: access
+    attributes:
+      label: 公开复现步骤与浏览器版本
