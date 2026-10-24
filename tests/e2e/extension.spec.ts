@@ -190,7 +190,7 @@ test('side panel starts without network traffic and renders at narrow width', as
   });
   await page.setViewportSize({ width: 380, height: 850 });
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  await expect(page.getByRole('button', { name: '识别当前页面' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '识别并填写' })).toBeEnabled();
   await expect(page.getByText('准备好，再轻轻一点')).toBeVisible();
   await page.screenshot({ path: '.dev/reports/screenshots/panel.png', fullPage: true });
   expect(network).toEqual([]);
@@ -204,12 +204,12 @@ test('side panel previews, binds, fills and undoes through its real UI', async (
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await panel.setViewportSize({ width: 400, height: 900 });
   await form.bringToFront();
-  await panel.getByRole('button', { name: '识别当前页面' }).click();
-  await expect(panel.getByRole('heading', { name: /填写预览/ })).toBeVisible();
+  await panel.getByRole('button', { name: '识别并填写' }).click();
+  await expect(panel.getByRole('heading', { name: /表单识别与复用/ })).toBeVisible();
   const unrelated = await worker.evaluate(async () =>
     chrome.tabs.create({ url: 'about:blank', active: false }),
   );
-  await expect(panel.getByRole('heading', { name: /填写预览/ })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: /表单识别与复用/ })).toBeVisible();
   await worker.evaluate(async (id) => chrome.tabs.remove(id!), unrelated.id);
   await panel.getByLabel('绑定 姓名', { exact: true }).selectOption('personal.name');
   await expect(panel.getByRole('button', { name: /填写已选/ })).toBeEnabled();
@@ -233,9 +233,10 @@ test('plain labels and anonymous controls can be located without persisting posi
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await form.bringToFront();
-  await panel.getByRole('button', { name: '识别当前页面', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(panel.getByLabel('绑定 获奖经历', { exact: true })).toHaveValue('personal.awards');
-  const card = panel.locator('.field-card').filter({ hasText: '待识别字段 2' });
+  const card = panel.locator('.field-card').nth(1);
+  await expect(card).toContainText('待识别字段 2');
   await expect(card).toBeVisible();
   await card.getByRole('button', { name: '在网页中定位 待识别字段 2' }).click();
   await expect
@@ -243,7 +244,7 @@ test('plain labels and anonymous controls can be located without persisting posi
     .toBeGreaterThan(0);
   await expect(form.getByTestId('anonymous')).toHaveValue('');
   await card.getByRole('combobox').selectOption('personal.awards');
-  await expect(card).toContainText('本次绑定');
+  await expect(card).toContainText('手动对应');
   expect(
     await worker.evaluate(
       async () =>
@@ -251,7 +252,7 @@ test('plain labels and anonymous controls can be located without persisting posi
           .mappings,
     ),
   ).toEqual([]);
-  await panel.getByRole('button', { name: '识别当前页面', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(card.getByRole('combobox')).toHaveValue('');
   await panel.close();
   await form.close();
@@ -264,14 +265,14 @@ test('changing saved profile invalidates a side-panel plan', async () => {
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await form.bringToFront();
-  await panel.getByRole('button', { name: '识别当前页面' }).click();
-  await expect(panel.getByRole('heading', { name: /填写预览/ })).toBeVisible();
+  await panel.getByRole('button', { name: '识别并填写' }).click();
+  await expect(panel.getByRole('heading', { name: /表单识别与复用/ })).toBeVisible();
   await worker.evaluate(async () => {
     const db = (await chrome.storage.local.get('resume-companion'))['resume-companion'] as Database;
     db.profiles[0]!.personal.name = '更新后的资料';
     await chrome.storage.local.set({ 'resume-companion': db });
   });
-  await expect(panel.getByRole('heading', { name: /填写预览/ })).toHaveCount(0);
+  await expect(panel.getByRole('heading', { name: /表单识别与复用/ })).toHaveCount(0);
   await panel.close();
   await form.close();
 });
@@ -369,7 +370,7 @@ test('AI reads independent layout and keys, automatically fills locally only aft
   await panel.setViewportSize({ width: 400, height: 900 });
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await form.bringToFront();
-  await panel.getByRole('button', { name: 'AI 识别并填写', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(panel.getByRole('heading', { name: '确认发送页面布局' })).toBeVisible();
   await expect(panel.locator('.ai-preview')).toContainText('本次等待：最长 120 秒');
   await expect(panel.getByRole('status')).toContainText('尚未发送给 AI');
@@ -422,7 +423,11 @@ test('AI reads independent layout and keys, automatically fills locally only aft
     .locator('.field-card')
     .filter({ has: panel.locator('strong', { hasText: /^姓名$/ }) });
   await expect(nameCard).toContainText('林知夏');
-  await expect(nameCard.getByRole('combobox')).toHaveCount(0);
+  await expect(nameCard.getByRole('combobox')).toHaveValue('personal.name');
+  await expect(
+    nameCard.getByRole('checkbox', { name: '已核对 姓名', exact: true }),
+  ).not.toBeChecked();
+  await expect(nameCard.locator('.field-title input')).not.toBeChecked();
   await panel.screenshot({ path: '.dev/reports/screenshots/ai-layout-result.png', fullPage: true });
   await panel.getByRole('button', { name: '撤销上次填写' }).click();
   await expect(form.locator('[data-fixture="name"]')).toHaveValue('');
@@ -482,7 +487,7 @@ for (const change of ['profile', 'page label'] as const) {
     const panel = await context.newPage();
     await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
     await form.bringToFront();
-    await panel.getByRole('button', { name: 'AI 识别并填写', exact: true }).click();
+    await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
     await panel.getByRole('button', { name: '确认识别并填写', exact: true }).click();
     try {
       await expect.poll(() => requested).toBe(true);
@@ -529,14 +534,14 @@ test('AI service failure never falls back to rule-based autofill', async () => {
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await form.bringToFront();
-  await panel.getByRole('button', { name: 'AI 识别并填写', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await panel.getByRole('button', { name: '确认识别并填写', exact: true }).click();
   await expect(panel.getByRole('status')).toContainText('HTTP 500');
   await expect(panel.getByRole('status')).toContainText('当前阶段：失败');
   await expect(panel.getByRole('button', { name: '重新采集并识别' })).toBeVisible();
   await expect(panel.getByText('等待 AI 识别', { exact: true })).toHaveCount(0);
   await expect(form.locator('#name')).toHaveValue('');
-  await expect(panel.getByRole('button', { name: /填写已选/ })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /填写已选/ })).toBeDisabled();
   await context.unroute('https://ai.fixture.invalid/v1/chat/completions');
   await panel.close();
   await form.close();
@@ -611,14 +616,14 @@ test('AI names empty, missing and unsupported fields independently and fills new
   await panel.setViewportSize({ width: 400, height: 900 });
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await form.bringToFront();
-  await panel.getByRole('button', { name: 'AI 识别并填写', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(panel.getByRole('status')).toContainText('等待确认发送');
   expect(requests).toHaveLength(0);
   await expect(panel.locator('.ai-preview details')).not.toHaveAttribute('open', '');
   await panel.getByRole('button', { name: '确认识别并填写', exact: true }).click();
   await expect(panel.getByRole('status')).toContainText('当前阶段：完成');
   await expect(panel.getByRole('status')).toContainText(
-    '候选控件 9 项 · 已识别名称 7 项 · 已匹配资料 6 项 · 已填写 2 项',
+    '候选控件 9 项 · 模板复用 0 项 · AI 新识别 7 项 · 已识别名称 7 项 · 已匹配资料 6 项 · 已填写 2 项',
   );
   const card = (name: string) =>
     panel
@@ -764,7 +769,7 @@ test('unlimited wait persists, displays elapsed time and can be cancelled withou
   });
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await form.bringToFront();
-  await panel.getByRole('button', { name: 'AI 识别并填写', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(panel.locator('.ai-preview')).toContainText('本次等待：无限等待');
   await panel.getByRole('button', { name: '确认识别并填写', exact: true }).click();
   try {
@@ -819,7 +824,7 @@ for (const failure of ['timeout', 'permission'] as const) {
     }, failure);
     await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
     await form.bringToFront();
-    await panel.getByRole('button', { name: 'AI 识别并填写', exact: true }).click();
+    await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
     await panel.getByRole('button', { name: '确认识别并填写', exact: true }).click();
     await expect(panel.getByRole('status')).toContainText('当前阶段：失败');
     await expect(panel.getByRole('status')).toContainText(

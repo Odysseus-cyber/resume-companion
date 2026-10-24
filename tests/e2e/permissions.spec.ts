@@ -44,7 +44,7 @@ test('real package distinguishes missing tab permission and offers explicit loca
   expect(before.hasId).toBe(true);
   expect(before.hasUrl).toBe(false);
   expect(before.permissions.origins || []).not.toContain('http://127.0.0.1/*');
-  await panel.getByRole('button', { name: '识别当前页面', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(panel.getByRole('status')).toContainText('无法读取当前页地址');
   await expect(panel.getByRole('button', { name: '授权本地测试页并识别' })).toBeVisible();
   const after = await worker.evaluate(async () => chrome.permissions.getAll());
@@ -65,7 +65,7 @@ test('toolbar opens through an explicit action handler and internal pages are id
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await panel.bringToFront();
-  await panel.getByRole('button', { name: '识别当前页面', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(panel.getByRole('status')).toContainText('浏览器内部页面或扩展页面');
   await panel.close();
 });

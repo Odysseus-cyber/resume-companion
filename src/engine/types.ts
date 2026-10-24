@@ -22,6 +22,8 @@ export interface Field {
   options: { label: string; value: string }[];
   autocomplete: string;
   section?: Section;
+  /** Static enclosing headings, nearest first. Local-only template region context. */
+  region?: string[];
   index: number;
   blocked: boolean;
   reviewReason?: string;

@@ -255,6 +255,14 @@ export class FormEngine {
   private history: Undo[] = [];
   private token = '';
   private busy = false;
+  private allowTemplateRebind = false;
+  private templateState?: {
+    token: string;
+    controlCount: number;
+    regionSelector: string;
+    regions: { node: Element; heading: string; section: string | null; count: number }[];
+    targets: Map<string, { parent: Element; count: number; label: string }>;
+  };
   private layoutState?: {
     url: string;
     collection: LayoutCollection;
@@ -263,8 +271,85 @@ export class FormEngine {
     anchors: Map<string, LayoutAnchor>;
     order: Map<Node, number>;
   };
+  /** Keep rule metadata local; the layout candidate set remains independent of rules. */
+  scanTemplate(): LayoutScan {
+    this.scan();
+    const metadata = new Map([...this.refs.values()].map((ref) => [ref.nodes[0]!, ref.field]));
+    const scan = this.scanLayout();
+    for (const ref of this.refs.values()) {
+      const region: string[] = [];
+      for (
+        let parent = ref.nodes[0]!.parentElement;
+        parent && parent !== document.body;
+        parent = parent.parentElement
+      ) {
+        const heading = headingOf(parent);
+        if (heading && !region.includes(heading)) region.push(heading);
+      }
+      ref.field.region = region.slice(0, 8);
+      const previous = metadata.get(ref.nodes[0]!);
+      if (previous)
+        Object.assign(ref.field, {
+          label: previous.label,
+          signature: previous.signature,
+          context: previous.context,
+          bindingStable: previous.bindingStable,
+          section: previous.section,
+          index: previous.index,
+          autocomplete: previous.autocomplete,
+          blocked: ref.field.blocked || previous.blocked,
+          supportReason:
+            ref.field.supportReason ||
+            (previous.blocked ? previous.supportReason || '敏感或确认字段需手动填写' : undefined),
+        });
+      if (ref.field.blocked) {
+        const control = scan.layout.controls.find((c) => c.id === ref.field.id)!;
+        control.writable = false;
+        control.reason = ref.field.supportReason;
+      }
+    }
+    const regionSelector = [
+      'form',
+      'section',
+      'fieldset',
+      '[data-section]',
+      '[role="group"]',
+      ...getAdapter(location.href).sectionSelectors,
+    ].join(',');
+    this.templateState = {
+      token: scan.token,
+      controlCount: document.querySelectorAll(controlSelector).length,
+      regionSelector,
+      regions: Array.from(document.querySelectorAll(regionSelector), (node) => ({
+        node,
+        heading: headingOf(node),
+        section: node.getAttribute('data-section'),
+        count: node.querySelectorAll(controlSelector).length,
+      })),
+      targets: new Map(
+        [...this.refs].flatMap(([id, ref]) => {
+          const node = ref.nodes[0]!;
+          const info = labelInfo(node);
+          return node.parentElement && info.bindingStable
+            ? [
+                [
+                  id,
+                  {
+                    parent: node.parentElement,
+                    count: node.parentElement.querySelectorAll(controlSelector).length,
+                    label: info.label,
+                  },
+                ] as const,
+              ]
+            : [];
+        }),
+      ),
+    };
+    return { ...scan, adapter: getAdapter(location.href).id };
+  }
   scanLayout(): LayoutScan {
     if (this.busy) throw new Error('正在填写，请稍后再识别');
+    this.templateState = undefined;
     const collection = collectLayout();
     this.refs.clear();
     this.token = crypto.randomUUID();
@@ -348,12 +433,12 @@ export class FormEngine {
       layout: collection.layout,
     };
   }
-  validateLayout(token: string): { valid: true } {
+  validateLayout(token: string, checkValue = true): { valid: true } {
     const state = this.layoutSession(token);
     // Request-time checks reject semantic changes to the submitted snapshot, but
     // do not compare positions or newly inserted validation messages.
     for (const id of state.anchors.keys()) this.validateAnchor(id);
-    for (const id of this.refs.keys()) this.validateLayoutTarget(token, id);
+    for (const id of this.refs.keys()) this.validateLayoutTarget(token, id, [], checkValue);
     return { valid: true };
   }
   private layoutSession(token: string) {
@@ -394,6 +479,11 @@ export class FormEngine {
     const state = this.layoutSession(token);
     const ref = this.refs.get(id);
     const target = state.targets.get(id);
+    if (this.allowTemplateRebind) {
+      this.validateTemplateStructure(token);
+      if (ref && target && ref.nodes.some((node) => !node.isConnected))
+        this.rebindTemplateTarget(id, ref, target);
+    }
     if (!ref || !target || !widgetMembersUnchanged(ref)) throw new Error('字段已变化，请重新识别');
     const first = ref.nodes[0]!;
     if (
@@ -427,8 +517,8 @@ export class FormEngine {
       )
         throw new Error('字段结构或状态已变化，请重新识别');
       for (const peer of state.collection.candidates.flatMap((candidate) => candidate.nodes)) {
-        // Replaced unrelated fields do not invalidate a surviving target. We never
-        // rebind to their replacements, even if an id or selector looks identical.
+        // Replaced unrelated fields do not invalidate a surviving layout target.
+        // Template replacements require the separate structural/evidence guard.
         if (peer.isConnected) this.validateOrder(peer, node);
       }
     });
@@ -441,10 +531,88 @@ export class FormEngine {
     this.layoutSession(token);
     return this.fill(token, items, true);
   }
+  /** Rebind only an empty native control replaced inside its surviving original row. */
+  async fillTemplate(token: string, items: PlanItem[]): Promise<FillResult[]> {
+    if (this.busy) throw new Error('正在填写');
+    this.layoutSession(token);
+    if (this.templateState?.token !== token) throw new Error('模板扫描已失效，请重新识别');
+    this.allowTemplateRebind = true;
+    try {
+      return await this.fill(token, items, true);
+    } finally {
+      this.allowTemplateRebind = false;
+    }
+  }
+  private validateTemplateStructure(token: string) {
+    const state = this.templateState;
+    if (!state || state.token !== token) throw new Error('模板扫描已失效，请重新识别');
+    const regions = Array.from(document.querySelectorAll(state.regionSelector));
+    if (
+      document.querySelectorAll(controlSelector).length !== state.controlCount ||
+      regions.length !== state.regions.length ||
+      state.regions.some(
+        (region, index) =>
+          regions[index] !== region.node ||
+          headingOf(region.node) !== region.heading ||
+          region.node.getAttribute('data-section') !== region.section ||
+          region.node.querySelectorAll(controlSelector).length !== region.count,
+      )
+    )
+      throw new Error('表单区域或经历结构已变化，请重新识别');
+  }
+  private rebindTemplateTarget(id: string, ref: Ref, target: LayoutTarget) {
+    const state = this.layoutState!;
+    const guard = this.templateState!.targets.get(id);
+    const original = ref.nodes[0]!;
+    if (
+      !guard ||
+      !guard.parent.isConnected ||
+      ref.nodes.length !== 1 ||
+      !['text', 'textarea', 'date', 'month', 'select'].includes(ref.field.kind) ||
+      !(
+        original instanceof HTMLInputElement ||
+        original instanceof HTMLTextAreaElement ||
+        original instanceof HTMLSelectElement
+      ) ||
+      JSON.stringify(state.values.get(id)) !== JSON.stringify(['']) ||
+      !target.evidence.length ||
+      guard.parent.querySelectorAll(controlSelector).length !== guard.count
+    )
+      return;
+    // Original static text nodes must survive. A copied label/row is not evidence
+    // that a newly rendered field is still the same question or experience.
+    for (const textId of target.evidence) this.validateAnchor(textId);
+    const replacements = Array.from(
+      guard.parent.querySelectorAll<Control>('input,textarea,select'),
+    ).filter((node) => {
+      const info = labelInfo(node);
+      return (
+        node.parentElement === guard.parent &&
+        !unavailable(node) &&
+        !raw(node) &&
+        !isChoiceTrigger(node) &&
+        controlShape(node) === target.shapes[0] &&
+        sameAncestors(node, target.parents[0]!) &&
+        info.bindingStable &&
+        info.label === guard.label &&
+        ![...this.refs.values()].some((other) => other !== ref && other.nodes.includes(node))
+      );
+    });
+    if (replacements.length !== 1) return;
+    const replacement = replacements[0]!;
+    const order = state.order.get(original);
+    if (order === undefined) return;
+    state.order.delete(original);
+    state.order.set(replacement, order);
+    // Collection candidates and refs share the node array; update it in place so
+    // subsequent validation and undo both follow the verified replacement.
+    ref.nodes[0] = replacement;
+  }
   scan(url = location.href): Scan {
     if (this.busy) throw new Error('正在填写，请稍后再识别');
     this.refs.clear();
     this.layoutState = undefined;
+    this.templateState = undefined;
     this.token = crypto.randomUUID();
     const adapter = getAdapter(url);
     const groups: Record<Section, Element[]> = { education: [], experience: [], projects: [] };

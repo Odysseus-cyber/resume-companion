@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { FormEngine } from '../src/engine/dom';
 import { z } from 'zod';
 const fillSchema = z.object({
-  type: z.enum(['FILL', 'FILL_LAYOUT']),
+  type: z.enum(['FILL', 'FILL_LAYOUT', 'FILL_TEMPLATE']),
   token: z.string(),
   items: z
     .array(
@@ -33,18 +33,24 @@ export default defineContentScript({
         return;
       const execute = async () => {
         if (message.type === 'SCAN') return engine.scan();
+        if (message.type === 'SCAN_TEMPLATE') return engine.scanTemplate();
         if (message.type === 'SCAN_LAYOUT') return engine.scanLayout();
-        if (message.type === 'CHECK_LAYOUT') {
+        if (message.type === 'CHECK_LAYOUT' || message.type === 'CHECK_TEMPLATE') {
           const m = z.object({ token: z.string() }).parse(message);
-          return engine.validateLayout(m.token);
+          return engine.validateLayout(m.token, message.type === 'CHECK_LAYOUT');
         }
         if (message.type === 'LOCATE') {
           const m = z.object({ token: z.string(), id: z.string() }).parse(message);
           return engine.locate(m.token, m.id);
         }
-        if (message.type === 'FILL' || message.type === 'FILL_LAYOUT') {
+        if (
+          message.type === 'FILL' ||
+          message.type === 'FILL_LAYOUT' ||
+          message.type === 'FILL_TEMPLATE'
+        ) {
           const m = fillSchema.parse(message);
-          return message.type === 'FILL_LAYOUT'
+          if (message.type === 'FILL_TEMPLATE') return engine.fillTemplate(m.token, m.items);
+          return message.type !== 'FILL'
             ? engine.fillLayout(m.token, m.items)
             : engine.fill(m.token, m.items);
         }

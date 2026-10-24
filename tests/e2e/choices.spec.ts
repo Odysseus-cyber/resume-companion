@@ -103,7 +103,7 @@ async function prepare() {
 
 async function identify(form: Page, panel: Page) {
   await form.bringToFront();
-  await panel.getByRole('button', { name: 'AI 识别并填写', exact: true }).click();
+  await panel.getByRole('button', { name: '识别并填写', exact: true }).click();
   await expect(panel.getByRole('status')).toContainText('等待确认发送');
 }
 

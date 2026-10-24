@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { formTemplateSchema } from './templates';
 
 export const sectionNames = {
   education: '教育经历',
@@ -96,16 +97,18 @@ export const settingsSchema = z.object({
 });
 export const dbSchema = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     profiles: z.array(profileSchema).min(1).max(30),
     activeId: z.string(),
     mappings: z.array(mappingSchema).max(5000),
+    templates: z.array(formTemplateSchema).max(200),
     settings: settingsSchema,
   })
   .refine((db) => db.profiles.some((p) => p.id === db.activeId), '当前简历不存在')
+  .refine((db) => new Set(db.profiles.map((p) => p.id)).size === db.profiles.length, '简历 ID 重复')
   .refine(
-    (db) => new Set(db.profiles.map((p) => p.id)).size === db.profiles.length,
-    '简历 ID 重复',
+    (db) => new Set(db.templates.map((template) => template.id)).size === db.templates.length,
+    '模板 ID 重复',
   );
 export type Database = z.infer<typeof dbSchema>;
 
@@ -153,10 +156,11 @@ export function defaultDatabase(): Database {
   // A not-yet-persisted database must have the same identity across extension pages.
   p.id = 'local-default';
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     profiles: [p],
     activeId: p.id,
     mappings: [],
+    templates: [],
     settings: { aiEnabled: false, endpoint: '', model: '' },
   };
 }
@@ -198,9 +202,14 @@ export function migrate(value: unknown): Database {
         .parse(value);
       return dbSchema.parse({
         ...legacy,
-        schemaVersion: 2,
+        schemaVersion: 3,
+        templates: [],
         profiles: legacy.profiles.map(migrateLegacyProfile),
       });
+    }
+    if ('schemaVersion' in value && value.schemaVersion === 2) {
+      // v2 already has all personal fields; only templates are introduced here.
+      return dbSchema.parse({ ...value, schemaVersion: 3, templates: [] });
     }
   }
   return dbSchema.parse(value);
