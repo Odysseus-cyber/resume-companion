@@ -383,7 +383,8 @@ describe('fill verification and undo', () => {
   });
   it('requires manual selection when custom popup ownership is absent', async () => {
     const { engine, scan } = fixture('<input role="combobox"><div role="option">本科</div>');
-    expect((await engine.fill(scan.token, [plan('f0', '本科')]))[0]!.status).toBe('failed');
+    expect(scan.fields[0]!.supportReason).toContain('无法确认');
+    expect((await engine.fill(scan.token, [plan('f0', '本科')]))[0]!.status).toBe('skipped');
   });
 });
 

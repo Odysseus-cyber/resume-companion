@@ -8,9 +8,13 @@ http
       const name = req.url === '/' ? 'application.html' : req.url?.slice(1);
       if (
         !name ||
-        !['application.html', 'controlled.html', 'layout.html', 'profile-fields.html'].includes(
-          name,
-        )
+        ![
+          'application.html',
+          'controlled.html',
+          'layout.html',
+          'profile-fields.html',
+          'choices.html',
+        ].includes(name)
       ) {
         res.writeHead(404).end();
         return;

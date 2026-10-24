@@ -1,6 +1,6 @@
 {
   "name": "resume-companion",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "Resume Companion — local-first application form companion",
   "type": "module",

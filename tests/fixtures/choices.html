@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>虚构选择控件回归表单</title>
+    <style>
+      body {
+        font: 18px sans-serif;
+        margin: 30px;
+      }
+      label {
+        display: block;
+        margin: 20px 0 8px;
+      }
+      input {
+        padding: 12px;
+        width: 500px;
+      }
+      input[type='radio'] {
+        width: auto;
+      }
+      [role='listbox'],
+      [role='dialog'] {
+        padding: 20px;
+        border: 1px solid #aaa;
+      }
+      [role='option'],
+      button {
+        padding: 10px;
+        cursor: pointer;
+      }
+      [role='group'] {
+        margin-left: 24px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>虚构申请表 · 不提交申请</h1>
+    <form>
+      <label for="education">最高学历</label>
+      <input
+        id="education"
+        readonly
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded="false"
+        aria-controls="education-options"
+      />
+      <div id="education-options" role="listbox" aria-label="学历选项" hidden>
+        <div id="degree-options"></div>
+        <button type="button" aria-label="清空选择">清空选择</button>
+      </div>
+      <label for="household">户口所在地</label>
+      <input
+        id="household"
+        readonly
+        role="combobox"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-controls="region-dialog"
+      />
+      <div id="region-dialog" role="dialog" aria-label="选择户口所在地" hidden>
+        <label for="region-search">搜索地区</label>
+        <input id="region-search" role="searchbox" />
+        <div role="tree" aria-label="地区层级">
+          <div role="treeitem" aria-label="浙江省" aria-expanded="false">
+            <span>浙江省</span><button type="button" aria-label="展开">展开</button>
+            <div role="group" hidden>
+              <div role="treeitem" aria-label="杭州市" aria-expanded="false">
+                <span>杭州市</span><button type="button" aria-label="展开">展开</button>
+                <div role="group" hidden>
+                  <div role="treeitem" aria-label="余杭区">
+                    <label
+                      ><input
+                        type="radio"
+                        name="region"
+                        value="浙江省/杭州市/余杭区"
+                      />余杭区</label
+                    >
+                  </div>
+                </div>
+              </div>
+              <div role="treeitem" aria-label="示例第二市" aria-expanded="false">
+                <span>示例第二市</span><button type="button" aria-label="展开">展开</button>
+                <div role="group" hidden>
+                  <div role="treeitem" aria-label="余杭区">
+                    <label
+                      ><input
+                        type="radio"
+                        name="region"
+                        value="浙江省/示例第二市/余杭区"
+                      />余杭区</label
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p id="selected-region" aria-live="polite">尚未选择</p>
+        <button type="button" id="region-cancel">取消</button>
+        <button type="button" id="region-clear">清空</button>
+        <button type="button" id="region-confirm">确定</button>
+      </div>
+      <label for="ethnicity">民族</label>
+      <input id="ethnicity" />
+      <button type="submit">提交（仅计数）</button>
+    </form>
+    <script>
+      window.submissions = 0;
+      document.querySelector('form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        window.submissions += 1;
+      });
+      const education = document.querySelector('#education');
+      const educationPopup = document.querySelector('#education-options');
+      function closeEducation() {
+        educationPopup.hidden = true;
+        education.setAttribute('aria-expanded', 'false');
+      }
+      education.addEventListener('click', () => {
+        educationPopup.hidden = false;
+        education.setAttribute('aria-expanded', 'true');
+        document.querySelector('#degree-options').replaceChildren();
+        setTimeout(() => {
+          for (const degree of ['大学本科', '硕士研究生']) {
+            const option = document.createElement('div');
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', String(education.value === degree));
+            option.textContent = degree;
+            option.addEventListener('click', () => {
+              education.value = degree;
+              option.setAttribute('aria-selected', 'true');
+              education.dispatchEvent(new Event('change', { bubbles: true }));
+              closeEducation();
+            });
+            document.querySelector('#degree-options').append(option);
+          }
+        }, 180);
+      });
+      educationPopup.querySelector('button').addEventListener('click', () => {
+        education.value = '';
+        closeEducation();
+      });
+      const household = document.querySelector('#household');
+      const regionPopup = document.querySelector('#region-dialog');
+      function closeRegion() {
+        regionPopup.hidden = true;
+        household.setAttribute('aria-expanded', 'false');
+      }
+      household.addEventListener('click', () => {
+        regionPopup.hidden = false;
+        household.setAttribute('aria-expanded', 'true');
+        for (const radio of regionPopup.querySelectorAll('input[type=radio]')) {
+          radio.checked = radio.value === household.value;
+        }
+      });
+      for (const button of regionPopup.querySelectorAll('button[aria-label=展开]')) {
+        button.addEventListener('click', () => {
+          setTimeout(() => {
+            button.parentElement.setAttribute('aria-expanded', 'true');
+            button.parentElement.querySelector(':scope > [role=group]').hidden = false;
+          }, 120);
+        });
+      }
+      regionPopup.addEventListener('change', () => {
+        document.querySelector('#selected-region').textContent =
+          regionPopup.querySelector('input:checked')?.value || '尚未选择';
+      });
+      document.querySelector('#region-confirm').addEventListener('click', () => {
+        household.value = regionPopup.querySelector('input:checked')?.value || '';
+        household.dispatchEvent(new Event('change', { bubbles: true }));
+        closeRegion();
+      });
+      document.querySelector('#region-cancel').addEventListener('click', closeRegion);
+      document.querySelector('#region-clear').addEventListener('click', () => {
+        household.value = '';
+        for (const radio of regionPopup.querySelectorAll('input[type=radio]'))
+          radio.checked = false;
+        document.querySelector('#selected-region').textContent = '尚未选择';
+        closeRegion();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeEducation();
+          closeRegion();
+        }
+      });
+    </script>
+  </body>
+</html>

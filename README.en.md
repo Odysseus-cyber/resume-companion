@@ -16,12 +16,16 @@ Known resume/page values and common sensitive patterns are filtered out of page 
 
 ## Source and installation
 
-Repository: [Odysseus-cyber/resume-companion](https://github.com/Odysseus-cyber/resume-companion). Version **0.2.3** is a development preview. Only published entries on [Releases](https://github.com/Odysseus-cyber/resume-companion/releases) are public downloads; draft releases are visible only to maintainers.
+Repository: [Odysseus-cyber/resume-companion](https://github.com/Odysseus-cyber/resume-companion). The current development version is **0.2.4**; the archived baseline is `v0.2.3`. Only published entries on [Releases](https://github.com/Odysseus-cyber/resume-companion/releases) are public downloads; draft releases are visible only to maintainers.
 
 ```sh
 git clone https://github.com/Odysseus-cyber/resume-companion.git
 cd resume-companion
 ```
+
+## Choice controls (0.2.4 development)
+
+Explicitly associated ARIA listboxes and region trees can be operated locally, including readonly triggers and asynchronous options. Full administrative paths are required when the widget does not expose an unambiguous city-level option. Undo uses a verifiable local clear operation when available; otherwise restoration remains manual. This does not establish compatibility with the actual Hellobike picker or unlabelled visual column widgets. Popup searches, option values and selected summaries are excluded from AI layout capture.
 
 ## Development
 
