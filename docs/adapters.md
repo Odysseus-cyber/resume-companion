@@ -2,11 +2,11 @@
 
 核心类型位于 `src/engine/types.ts`。当前 `SiteAdapter` 提供 `id`、`name`、`matches(URL)`、`sectionSelectors` 和 `identify(Field)`；站点注册位于 `src/engine/adapters.ts`。规划、填写、校验由通用 `FormEngine` 与匹配器共同完成，暂未为每个适配器暴露独立的 execute / verify 钩子。
 
-`Field` 记录字段 ID、签名、标签、种类、当前值、选项、autocomplete、经历分区与索引。`PlanItem` 记录资料路径、拟填值、匹配来源、置信值和用户选择。`FillResult` 区分 filled / failed / skipped / review。扫描 token 用于拒绝失效的填写计划。
+`Field` 记录字段 ID、签名、标签、种类、当前值、选项、autocomplete、经历分区与索引，以及本地使用的区域标题 `region`。`PlanItem` 记录资料路径、拟填值、匹配来源、置信值和用户选择。`FillResult` 区分 filled / failed / skipped / review。扫描 token 用于拒绝失效的填写计划。
 
 ## 增加一个站点
 
-1. 检查现有通用识别能否解决问题，优先添加正确标签和分区规则。
+1. 先检查通用表单模板、标签/区域采集和控件驱动能否解决问题；不要把整张企业表单固化成坐标或字段顺序。
 2. 新域名使用明确的 hostname 边界匹配，避免子串误判。
 3. 把实例页面缩减为虚构 HTML 夹具，覆盖重复经历和现有值。
 4. 若 `identify` 返回资料路径，验证它对应当前 `facts(profile)` 中的路径，不依赖真实用户值。
@@ -25,4 +25,12 @@ AI 路径独立于站点字段词典：采集顶层已展开表单的候选控�
 
 ## 数据迁移
 
-数据库 `schemaVersion: 2` 包含 profiles、activeId、mappings 和 settings；session Key 不属于数据库。迁移入口支持 v1 和早期无版本单 profile 对象；新增最高学历、学习形式、户口所在地和民族为空字符串，原资料及自定义字段保留，未知版本拒绝导入。修改格式时增加迁移与备份恢复测试。
+数据库 `schemaVersion: 3` 包含 profiles、activeId、mappings、settings 和 templates；session Key 不属于数据库。迁移入口支持 v2、v1 和早期无版本单 profile 对象；旧格式新增空模板集合，v1 和原型中的四个新个人字段补空字符串。原资料、设置、映射及自定义字段保留，未知版本拒绝导入。JSON 和加密备份使用相同迁移入口，完整备份包含模板。
+
+## 模板与执行边界
+
+`src/domain/templates.ts` 定义严格的模板版本 1：来源仅为 origin，最多 200 份模板、每份 500 个字段。字段记录已确认语义、参数化资料路径、经历索引、脱敏文字与区域依据和内置控件类型；不能包含 value、HTML、脚本或任意选择器。自定义字段必须关联本地简历。
+
+`createTemplate` 将本次已核对字段转为模板；`resolveTemplates` 输出当前扫描编号、资料路径、依据及 full / partial / none / ambiguous 状态；`prepareIncrementalRequest` 裁剪待识别区域和必要上下文。执行时仍本地读取资料，绝不直接执行模板中的操作代码。详见 [模板说明](templates.md)。
+
+`SCAN_TEMPLATE` 保留规则标签和区域信息，同时采集完整布局候选。`FILL_TEMPLATE` 允许原父容器、静态文字、类型、控件和区域数量均不变时重绑定唯一空原生控件；整行重建、多个替代目标或经历结构变化停止。`fillLayout` 继续拒绝节点替换。模板与手动映射冲突时交给用户核对。

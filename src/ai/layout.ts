@@ -69,6 +69,48 @@ export const layoutPayloadSchema = z.strictObject({
 });
 export type LayoutPayload = z.infer<typeof layoutPayloadSchema>;
 export type LocalCatalog = Map<string, Fact>;
+/** Select only unresolved controls, retaining their enclosing region's static context.
+ * Redaction happens BEFORE selection so values elsewhere on the page stay private. */
+export function selectLayoutRegion(scan: LayoutScan, ids: string[]): LayoutScan {
+  const wanted = new Set(ids);
+  const controls = scan.layout.controls.filter((c) => wanted.has(c.id));
+  const parents = new Map(scan.layout.containers.map((c) => [c.id, c.parentId]));
+  const ancestry = (id: string | null) => {
+    const chain = new Set<string>();
+    while (id && !chain.has(id)) {
+      chain.add(id);
+      id = parents.get(id) || null;
+    }
+    return chain;
+  };
+  const roots = new Set<string>();
+  for (const control of controls) {
+    // Include one enclosing level for labels across sibling wrappers.
+    const parent = control.parentId;
+    if (parent) roots.add(parents.get(parent) || parent);
+  }
+  const texts = scan.layout.texts.filter((t) =>
+    [...ancestry(t.parentId)].some((p) => roots.has(p)),
+  );
+  const needed = new Set([...controls, ...texts].flatMap((n) => [...ancestry(n.parentId)]));
+  return {
+    ...scan,
+    fields: scan.fields.filter((f) => wanted.has(f.id)),
+    layout: {
+      ...scan.layout,
+      controls,
+      texts,
+      containers: scan.layout.containers.filter((c) => needed.has(c.id)),
+    },
+  };
+}
+
+export function prepareIncrementalRequest(scan: LayoutScan, localFacts: Fact[], ids: string[]) {
+  const prepared = prepareLayoutRequest(scan, localFacts);
+  const safeScan = { ...scan, layout: prepared.payload.layout };
+  const selected = selectLayoutRegion(safeScan, ids);
+  return { ...prepared, payload: { ...prepared.payload, layout: selected.layout } };
+}
 const responseItemSchema = z.strictObject({
   id: z.string(),
   label: z.string().max(160),

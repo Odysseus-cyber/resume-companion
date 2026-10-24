@@ -14,13 +14,21 @@ import { Button } from './button';
 import { Brand, LocalNote, ErrorNotice, errorMessage, download } from './shared';
 import { facts, demoProfile, type Database, type Profile } from '../domain/model';
 import { addMissingFields, type Supplement } from '../domain/missing-fields';
-import { loadDatabase, saveDatabase, readSessionKey } from '../domain/storage';
+import { loadDatabase, saveDatabase, readSessionKey, updateTemplates } from '../domain/storage';
+import { createTemplate, resolveTemplates, type TemplateResolution } from '../engine/templates';
 import { matchField } from '../engine/matcher';
 import type { FillResult, PlanItem, Scan, LayoutScan } from '../engine/types';
 import { endpointUrl } from '../ai/client';
-import { prepareLayoutRequest, requestLayoutMappings, resolveLayoutPlan } from '../ai/layout';
+import {
+  prepareLayoutRequest,
+  prepareIncrementalRequest,
+  selectLayoutRegion,
+  requestLayoutMappings,
+  resolveLayoutPlan,
+} from '../ai/layout';
 
 type AIStage =
+  | 'template'
   | 'idle'
   | 'collecting'
   | 'confirmation'
@@ -31,6 +39,7 @@ type AIStage =
   | 'cancelled'
   | 'stale';
 const stageLabels: Record<AIStage, string> = {
+  template: '本地模板预览',
   idle: '准备识别',
   collecting: '采集中',
   confirmation: '等待确认发送',
@@ -42,6 +51,7 @@ const stageLabels: Record<AIStage, string> = {
   stale: '页面或资料已变化',
 };
 const stageDetails: Record<AIStage, string> = {
+  template: '已在本地检查模板；无需向 AI 发送已复用字段。',
   idle: '',
   collecting: '正在本地采集页面文字与控件，尚未发送给 AI。',
   confirmation: '尚未发送给 AI，请检查发送预览并确认发送。',
@@ -68,10 +78,15 @@ export function Panel() {
   const [matchDetails, setMatchDetails] = useState<Record<string, string>>({});
   const [stage, setStage] = useState<AIStage>('idle');
   const [summary, setSummary] = useState('');
+  const [reuse, setReuse] = useState<TemplateResolution>();
+  const [checkedFields, setCheckedFields] = useState<string[]>([]);
+  const [crossApproved, setCrossApproved] = useState(false);
   const [supplements, setSupplements] = useState<Record<string, Supplement>>({});
   const [supplementValues, setSupplementValues] = useState<Record<string, string>>({});
   const ownProfileUpdate = useRef<{ profile: string; settings: string } | undefined>(undefined);
   const revision = useRef(0);
+  // Capture the learning state at scan time, not the latest render after a storage event.
+  const learningSnapshot = useRef('');
   const requestController = useRef<AbortController | undefined>(undefined);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -198,6 +213,10 @@ export function Panel() {
   async function identify() {
     if (!db || !profile) return;
     const scanRevision = ++revision.current;
+    learningSnapshot.current = JSON.stringify([db.templates, db.mappings]);
+    setReuse(undefined);
+    setCheckedFields([]);
+    setCrossApproved(false);
     setStage(db.settings.aiEnabled ? 'collecting' : 'idle');
     setSummary('');
     setSupplements({});
@@ -238,36 +257,79 @@ export function Panel() {
         files: ['/content-scripts/content.js'],
       });
     }
-    const found = await send<Scan | LayoutScan>(
-      tab.id,
-      db.settings.aiEnabled ? 'SCAN_LAYOUT' : 'SCAN',
-    );
+    const found = await send<LayoutScan>(tab.id, 'SCAN_TEMPLATE');
     if (revision.current !== scanRevision) throw new Error('页面或简历已变化，请重新识别');
-    const request = 'layout' in found ? prepareLayoutRequest(found, allFacts) : undefined;
-    setTabId(tab.id);
-    setScan(found);
-    setResults([]);
-    setPrepared(request);
-    setAiPreview(!!request);
-    setPlan(
-      found.fields.map((field) =>
-        request
+    const resolved = resolveTemplates(
+      found,
+      profile,
+      demo ? [] : db.templates,
+      demo ? [] : db.mappings,
+    );
+    const request =
+      db.settings.aiEnabled && resolved.unresolvedIds.length
+        ? prepareIncrementalRequest(found, allFacts, resolved.unresolvedIds)
+        : undefined;
+    const reused = new Map(resolved.plan.map((p) => [p.id, p]));
+    const nextPlan = found.fields.map(
+      (field) =>
+        reused.get(field.id) ||
+        (db.settings.aiEnabled || resolved.details[field.id]
           ? {
               id: field.id,
               path: '',
               value: '',
-              source: '尚未发送给 AI',
+              source: db.settings.aiEnabled ? '尚未发送给 AI' : '待核对',
               confidence: 0,
               selected: false,
             }
-          : matchField(field, {
-              origin: found.origin,
-              facts: allFacts,
-              mappings: demo ? [] : db.mappings,
+          : {
+              ...matchField(field, {
+                origin: found.origin,
+                facts: allFacts,
+                mappings: demo ? [] : db.mappings,
+              }),
+              source: '离线匹配 · 请核对',
             }),
-      ),
     );
-    if (request) setStage(found.fields.length ? 'confirmation' : 'complete');
+    setTabId(tab.id);
+    setScan(found);
+    setReuse(resolved);
+    setResults([]);
+    setPrepared(request);
+    setAiPreview(!!request);
+    setPlan(nextPlan);
+    setRecognizedLabels(resolved.labels);
+    setMatchDetails(resolved.details);
+    setStage(request ? 'confirmation' : 'template');
+    setSummary(
+      `候选控件 ${found.fields.length} 项 · 模板复用 ${resolved.reused} 项 · AI 新识别 0 项 · 已匹配资料 ${nextPlan.filter((p) => p.path).length} 项 · 已填写 0 项`,
+    );
+    if (resolved.crossOrigin)
+      setMessage('发现同系统其他站点的候选模板，请核对对应关系，再确认跨站点复用。');
+    if (resolved.status === 'full' && !resolved.crossOrigin && nextPlan.some((p) => p.selected)) {
+      const latest = await loadDatabase();
+      if (
+        revision.current !== scanRevision ||
+        (!demo &&
+          JSON.stringify(latest.profiles.find((p) => p.id === latest.activeId)) !==
+            profileFingerprint) ||
+        JSON.stringify([latest.templates, latest.mappings]) !== learningSnapshot.current
+      )
+        throw new Error('资料或模板已变化，请重新识别');
+      setStage('filling');
+      const executed = await send<FillResult[]>(tab.id, 'FILL_TEMPLATE', {
+        token: found.token,
+        items: nextPlan,
+      });
+      if (revision.current !== scanRevision) return;
+      setResults(executed);
+      setPlan(nextPlan.map((p) => ({ ...p, selected: false })));
+      setStage('complete');
+      setSummary(
+        `候选控件 ${found.fields.length} 项 · 模板复用 ${resolved.reused} 项 · AI 新识别 0 项 · 已匹配资料 ${nextPlan.filter((p) => p.path).length} 项 · 已填写 ${executed.filter((r) => r.status === 'filled').length} 项`,
+      );
+      setMessage('已使用本地模板填写，未发送 AI 请求。请在网页中核对。');
+    }
     if (!found.fields.length)
       setMessage('当前页未发现可填写字段。请展开经历区域后重试；嵌入框架暂需手动填写');
   }
@@ -284,6 +346,20 @@ export function Panel() {
     if (!scan) return;
     const field = scan.fields.find((f) => f.id === id)!;
     const fact = allFacts.find((f) => f.path === path);
+    if (fact && !recognizedLabels[id]) {
+      setRecognizedLabels((labels) => ({
+        ...labels,
+        [id]:
+          field.label === '未命名字段' || field.label.startsWith('待识别字段')
+            ? fact.label
+            : field.label,
+      }));
+    }
+    setCheckedFields((ids) => ids.filter((checked) => checked !== id));
+    setMatchDetails((details) => ({
+      ...details,
+      [id]: fact ? (fact.value ? '手动对应 · 已匹配资料' : '手动对应 · 缺少资料') : '未绑定资料',
+    }));
     setPlan((items) =>
       items.map((p) =>
         p.id === id
@@ -291,14 +367,14 @@ export function Panel() {
               ...p,
               path,
               value: fact?.value || '',
-              source: field.bindingStable === false ? '本次绑定 · 仅当前扫描' : '你的映射',
+              source: '本次手动绑定 · 保存模板后复用',
               confidence: 1,
               selected: !!fact?.value && !field.blocked && !field.value,
             }
           : p,
       ),
     );
-    if (!demo) {
+    if (!demo && !('layout' in scan)) {
       const latest = await loadDatabase();
       latest.mappings = latest.mappings.filter(
         (m) => !(m.origin === scan.origin && m.signature === field.signature),
@@ -314,15 +390,78 @@ export function Panel() {
     }
   }
   async function fill() {
-    if (!scan || !tabId) return;
-    if ('layout' in scan) throw new Error('AI 模式请重新采集并确认识别填写');
+    if (!scan || tabId === undefined || !profile) return;
+    if (reuse?.crossOrigin && !crossApproved) throw new Error('请先核对并确认跨站点复用');
+    const requestRevision = revision.current;
+    const latest = await loadDatabase();
     const tab = await browser.tabs.get(tabId);
-    if (tab.url !== scan.url) throw new Error('网页已导航，请重新识别');
-    const result = await send<FillResult[]>(tabId, 'FILL', { token: scan.token, items: plan });
-    setResults(result);
-    setMessage(
-      `已填写 ${result.filter((r) => r.status === 'filled').length} 项。请在网页中核对，插件不会提交申请。`,
+    const [active] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (
+      tab.url !== scan.url ||
+      active?.id !== tabId ||
+      revision.current !== requestRevision ||
+      (!demo &&
+        JSON.stringify(latest.profiles.find((p) => p.id === latest.activeId)) !==
+          profileFingerprint) ||
+      JSON.stringify([latest.templates, latest.mappings]) !== learningSnapshot.current
+    )
+      throw new Error('页面、资料或模板已变化，请重新识别');
+    setStage('filling');
+    const result = await send<FillResult[]>(tabId, 'FILL_TEMPLATE', {
+      token: scan.token,
+      items: plan,
+    });
+    if (revision.current !== requestRevision) return;
+    setResults((previous) => [
+      ...previous.filter((p) => !result.some((r) => r.id === p.id)),
+      ...result,
+    ]);
+    setPlan((items) => items.map((p) => ({ ...p, selected: false })));
+    setStage('complete');
+    setSummary(
+      `候选控件 ${scan.fields.length} 项 · 模板复用 ${reuse?.reused || 0} 项 · 已匹配资料 ${plan.filter((p) => p.path).length} 项 · 本次已填写 ${result.filter((r) => r.status === 'filled').length} 项`,
     );
+    setMessage('本地填写完成，未发送 AI 请求。请在网页中核对。');
+  }
+  async function saveTemplate() {
+    if (!scan || !('layout' in scan) || !profile || demo || !checkedFields.length) return;
+    if (reuse?.crossOrigin && !crossApproved) throw new Error('请先核对并确认跨站点复用');
+    const capturedRevision = revision.current;
+    const latest = await loadDatabase();
+    if (
+      JSON.stringify(latest.profiles.find((p) => p.id === latest.activeId)) !==
+        profileFingerprint ||
+      JSON.stringify([latest.templates, latest.mappings]) !== learningSnapshot.current ||
+      revision.current !== capturedRevision
+    )
+      throw new Error('资料已变化，请重新识别');
+    const existing = latest.templates.find(
+      (t) => t.id === reuse?.templateId && t.origin === scan.origin,
+    );
+    if (tabId === undefined) throw new Error('页面已变化，请重新识别');
+    await send(tabId, 'CHECK_TEMPLATE', { token: scan.token });
+    if (revision.current !== capturedRevision) throw new Error('页面已变化，请重新识别');
+    const preserve = existing
+      ? reuse?.plan
+          .filter((p) => plan.some((current) => current.id === p.id && current.path === p.path))
+          .map((p) => p.id) || []
+      : [];
+    const template = createTemplate(
+      scan,
+      profile,
+      plan,
+      recognizedLabels,
+      [...new Set([...preserve, ...checkedFields])],
+      existing,
+    );
+    const saved = await updateTemplates((templates) => [
+      ...templates.filter((t) => t.id !== template.id),
+      template,
+    ]);
+    learningSnapshot.current = JSON.stringify([saved.templates, saved.mappings]);
+    setReuse(resolveTemplates(scan, profile, saved.templates, saved.mappings));
+    setCheckedFields([]);
+    setMessage(`已保存 ${template.fields.length} 个已核对字段；再次识别将优先本地复用。`);
   }
   const aiPayload = prepared?.payload;
   async function persistProfile(next: Profile) {
@@ -405,6 +544,7 @@ export function Panel() {
   async function askAI() {
     if (!db?.settings.aiEnabled || !prepared || !scan || !('layout' in scan) || tabId === undefined)
       return;
+    if (reuse?.crossOrigin && !crossApproved) throw new Error('请先核对并确认跨站点复用');
     const requestRevision = revision.current;
     const snapshot = prepared;
     const capturedScan = scan;
@@ -420,6 +560,7 @@ export function Panel() {
         revision.current !== requestRevision ||
         JSON.stringify(latestProfile) !== profileFingerprint ||
         JSON.stringify(latest.settings) !== settingsFingerprint ||
+        JSON.stringify([latest.templates, latest.mappings]) !== learningSnapshot.current ||
         active?.id !== capturedTab ||
         active.url !== capturedScan.url
       )
@@ -438,13 +579,21 @@ export function Panel() {
         controller.signal,
       );
       await assertCurrent();
-      const resolved = resolveLayoutPlan(capturedScan, response, snapshot.catalog);
-      const decisions = resolved.mappings;
-      setRecognizedLabels(
-        Object.fromEntries(decisions.filter((d) => d.label).map((d) => [d.id, d.label])),
+      const submittedScan = selectLayoutRegion(
+        capturedScan,
+        snapshot.payload.layout.controls.map((c) => c.id),
       );
-      setMatchDetails(
-        Object.fromEntries(
+      const resolved = resolveLayoutPlan(submittedScan, response, snapshot.catalog);
+      const submitted = new Set(submittedScan.fields.map((f) => f.id));
+      setCheckedFields((ids) => ids.filter((id) => !submitted.has(id)));
+      const decisions = resolved.mappings;
+      setRecognizedLabels((previous) => ({
+        ...previous,
+        ...Object.fromEntries(decisions.filter((d) => d.label).map((d) => [d.id, d.label])),
+      }));
+      setMatchDetails((previous) => ({
+        ...previous,
+        ...Object.fromEntries(
           decisions.map((d) => {
             const fact = d.key ? snapshot.catalog.get(d.key) : undefined;
             const detail =
@@ -457,13 +606,45 @@ export function Panel() {
             return [d.id, detail];
           }),
         ),
-      );
-      setPlan(resolved.plan);
+      }));
+      const local = plan.filter((p) => !submitted.has(p.id));
+      const learned = decisions.map((d) => {
+        const fact =
+          d.status === 'matched' && d.key && !d.reason ? snapshot.catalog.get(d.key) : undefined;
+        return (
+          resolved.plan.find((p) => p.id === d.id) || {
+            id: d.id,
+            path: fact?.path || '',
+            value: fact?.value || '',
+            source: 'AI 布局语义匹配',
+            confidence: fact ? 1 : 0,
+            selected: false,
+            evidence: d.evidence,
+          }
+        );
+      });
+      const combinedPlan = [...local, ...learned].map((p) => {
+        const field = capturedScan.fields.find((f) => f.id === p.id);
+        if (
+          field &&
+          db.mappings.some(
+            (m) =>
+              m.origin === capturedScan.origin &&
+              m.signature === field.signature &&
+              m.path !== p.path,
+          )
+        )
+          return { ...p, selected: false, source: '与手动映射冲突，待核对' };
+        if (p.path && [...local, ...learned].filter((other) => other.path === p.path).length > 1)
+          return { ...p, selected: false, source: '资料对应冲突，待核对' };
+        return p;
+      });
+      setPlan(combinedPlan);
       setStage('filling');
-      const executed = resolved.plan.some((p) => p.selected)
+      const executed = combinedPlan.some((p) => p.selected)
         ? await send<FillResult[]>(capturedTab, 'FILL_LAYOUT', {
             token: capturedScan.token,
-            items: resolved.plan,
+            items: combinedPlan,
           })
         : [];
       // A navigation/profile update may arrive while the content script is filling.
@@ -471,15 +652,32 @@ export function Panel() {
       if (revision.current !== requestRevision) return;
       const combined = [
         ...resolved.results.filter((r) => !executed.some((e) => e.id === r.id)),
+        ...combinedPlan
+          .filter((p) => p.source.includes('冲突'))
+          .map((p) => ({ id: p.id, status: 'review' as const, reason: p.source })),
         ...executed,
       ];
       setResults(combined);
-      setPlan(resolved.plan.map((p) => ({ ...p, selected: false })));
+      setPlan(combinedPlan.map((p) => ({ ...p, selected: false })));
       let createdCount = 0;
       if (!demo && profile) {
-        const missing = addMissingFields(profile, capturedScan, decisions, snapshot.catalog);
+        const missing = addMissingFields(profile, submittedScan, decisions, snapshot.catalog);
         createdCount = missing.profile.custom.length - profile.custom.length;
         if (createdCount) await persistProfile(missing.profile);
+        setPlan((previous) =>
+          previous.map((p) => {
+            const supplement = missing.supplements[p.id];
+            return supplement
+              ? {
+                  ...p,
+                  path: supplement.path,
+                  value: '',
+                  evidence: supplement.evidence,
+                  selected: false,
+                }
+              : p;
+          }),
+        );
         setSupplements(missing.supplements);
         setMatchDetails((previous) => ({ ...previous, ...missing.notes }));
         setResults(
@@ -491,7 +689,7 @@ export function Panel() {
         );
       }
       setSummary(
-        `候选控件 ${capturedScan.fields.length} 项 · 已识别名称 ${decisions.filter((d) => d.label).length} 项 · 已匹配资料 ${decisions.filter((d) => d.status === 'matched' && d.key).length} 项 · 已填写 ${executed.filter((r) => r.status === 'filled').length} 项`,
+        `候选控件 ${capturedScan.fields.length} 项 · 模板复用 ${reuse?.reused || 0} 项 · AI 新识别 ${decisions.filter((d) => d.label).length} 项 · 已识别名称 ${decisions.filter((d) => d.label).length} 项 · 已匹配资料 ${combinedPlan.filter((p) => p.path).length} 项 · 已填写 ${executed.filter((r) => r.status === 'filled').length} 项`,
       );
       const changedDuringFill = executed.some((r) => /变化|过期/.test(r.reason || ''));
       setStage('complete');
@@ -516,7 +714,7 @@ export function Panel() {
           <Settings2 size={18} />
         </Button>
       </header>
-      {db?.settings.aiEnabled && stage !== 'idle' && (
+      {stage !== 'idle' && (
         <section
           className={`ai-progress ${stage}`}
           role="status"
@@ -582,21 +780,15 @@ export function Panel() {
           </select>
           <LocalNote />
         </div>
-        <Button
-          className="wide"
-          disabled={busy || !db}
-          onClick={() => void run(identify, !!db?.settings.aiEnabled)}
-        >
+        <Button className="wide" disabled={busy || !db} onClick={() => void run(identify, true)}>
           {db?.settings.aiEnabled ? <Sparkles size={18} /> : <ScanLine size={18} />}
           {busy
             ? '处理中…'
-            : db?.settings.aiEnabled
-              ? stage === 'failed' || stage === 'stale' || stage === 'cancelled'
-                ? '重新采集并识别'
-                : 'AI 识别并填写'
-              : '识别当前页面'}
+            : ['failed', 'stale', 'cancelled'].includes(stage)
+              ? '重新采集并识别'
+              : '识别并填写'}
         </Button>
-        {(!db?.settings.aiEnabled || stage === 'idle') && <ErrorNotice message={message} />}
+        {stage === 'idle' && <ErrorNotice message={message} />}
         {(needsTabAccess || (demo && !scan)) && (
           <Button
             className="wide"
@@ -637,8 +829,7 @@ export function Panel() {
           <>
             <div className="section-heading">
               <h2>
-                {'layout' in scan ? 'AI 页面识别' : '填写预览'}{' '}
-                <span className="count">{scan.fields.length}</span>
+                表单识别与复用 <span className="count">{scan.fields.length}</span>
               </h2>
               <span className="tag">{scan.adapter}</span>
             </div>
@@ -648,6 +839,53 @@ export function Panel() {
                 : '已有内容会保留。不确定的字段可以重新绑定资料。'}
             </p>
             {'layout' in scan && <p className="muted">{scan.layout.limitations.join('；')}</p>}
+            {reuse && (
+              <section className="card">
+                <h3>
+                  本地模板：
+                  {
+                    {
+                      full: '完全适用',
+                      partial: '部分适用',
+                      none: '暂无适用模板',
+                      ambiguous: '对应有歧义',
+                    }[reuse.status]
+                  }
+                </h3>
+                <p>
+                  已复用 {reuse.reused} 项，待识别或核对 {reuse.unresolvedIds.length} 项。
+                </p>
+                {reuse.crossOrigin && !crossApproved && (
+                  <Button disabled={busy} onClick={() => setCrossApproved(true)}>
+                    已核对，确认跨站点复用
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  disabled={busy || demo || !checkedFields.length}
+                  onClick={() => void run(saveTemplate)}
+                >
+                  保存已核对字段
+                </Button>
+                {db?.settings.aiEnabled && (
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      if (!('layout' in scan)) return;
+                      setPrepared(prepareLayoutRequest(scan, allFacts));
+                      setAiPreview(true);
+                      setStage('confirmation');
+                    }}
+                  >
+                    重新学习本页
+                  </Button>
+                )}
+                {!db?.settings.aiEnabled && (
+                  <p className="muted">AI 未启用；可使用模板或手动绑定，启用 AI 后可学习新字段。</p>
+                )}
+              </section>
+            )}
             {aiPreview && (
               <section className="card ai-preview" id="ai-preview">
                 <h3>确认发送页面布局</h3>
@@ -687,13 +925,13 @@ export function Panel() {
                 const result = results.find((r) => r.id === field.id);
                 const title =
                   recognizedLabels[field.id] ||
-                  ('layout' in scan || field.label === '未命名字段'
+                  (field.label === '未命名字段' || field.label.startsWith('待识别字段')
                     ? `${['complete', 'failed', 'stale', 'cancelled'].includes(stage) ? '未识别字段' : '待识别字段'} ${index + 1}`
                     : field.label);
                 return (
                   <article className={`field-card ${result?.status || ''}`} key={field.id}>
                     <label className="field-title">
-                      {!('layout' in scan) && (
+                      {
                         <input
                           type="checkbox"
                           checked={item?.selected || false}
@@ -706,7 +944,7 @@ export function Panel() {
                             )
                           }
                         />
-                      )}
+                      }
                       <strong>{title}</strong>
                       {result?.status === 'filled' ? <Check size={15} /> : <CircleHelp size={15} />}
                     </label>
@@ -779,22 +1017,42 @@ export function Panel() {
                         </Button>
                       </div>
                     )}
-                    {!('layout' in scan) && !field.blocked && !field.value && (
-                      <select
-                        aria-label={`绑定 ${title}`}
-                        value={item?.path || ''}
-                        disabled={busy}
-                        onChange={(e) => void run(() => bind(field.id, e.target.value))}
-                      >
-                        <option value="">选择对应资料…</option>
-                        {allFacts.map((f) => (
-                          <option key={f.path} value={f.path}>
-                            {f.label}
-                            {f.value ? '' : '（未填写）'}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                    {
+                      <div>
+                        <select
+                          aria-label={`绑定 ${title}`}
+                          value={item?.path || ''}
+                          disabled={busy}
+                          onChange={(e) => void run(() => bind(field.id, e.target.value))}
+                        >
+                          <option value="">选择对应资料…</option>
+                          {allFacts.map((f) => (
+                            <option key={f.path} value={f.path}>
+                              {f.label}
+                              {f.value ? '' : '（未填写）'}
+                            </option>
+                          ))}
+                        </select>
+                        {item?.path && (
+                          <label className="muted template-confirm">
+                            <input
+                              type="checkbox"
+                              aria-label={`已核对 ${title}`}
+                              checked={checkedFields.includes(field.id)}
+                              disabled={busy || demo}
+                              onChange={(e) =>
+                                setCheckedFields((ids) =>
+                                  e.target.checked
+                                    ? [...ids, field.id]
+                                    : ids.filter((id) => id !== field.id),
+                                )
+                              }
+                            />
+                            已核对，保存到模板
+                          </label>
+                        )}
+                      </div>
+                    }
                     {!('layout' in scan) && field.bindingStable === false && (
                       <p className="muted field-context">
                         缺少可靠标签，本次手动绑定不会记入跨页面填写记忆。
@@ -809,16 +1067,16 @@ export function Panel() {
       </div>
       {scan && (
         <footer className="panel-footer">
-          {!('layout' in scan) && (
+          {
             <Button
               className="wide"
               disabled={busy || !plan.some((p) => p.selected)}
-              onClick={() => void run(fill)}
+              onClick={() => void run(fill, true)}
             >
               <Check size={17} />
               填写已选 {plan.filter((p) => p.selected).length} 项
             </Button>
-          )}
+          }
           <Button
             variant="ghost"
             disabled={busy}

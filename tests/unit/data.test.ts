@@ -69,6 +69,7 @@ describe('local profile schema and backups', () => {
     expect(db.profiles).toHaveLength(1);
     expect(db.settings.aiEnabled).toBe(false);
     expect(db.mappings).toEqual([]);
+    expect(db.templates).toEqual([]);
     expect(db.profiles[0]!.personal.name).toBe('');
   });
   it('keeps unsaved initial identity stable while new profile versions remain unique', () => {
@@ -99,9 +100,10 @@ describe('local profile schema and backups', () => {
   it('migrates an unversioned prototype without losing facts', () => {
     const p = demoProfile();
     const db = migrate({ profile: p });
-    expect(db.schemaVersion).toBe(2);
+    expect(db.schemaVersion).toBe(3);
     expect(db.activeId).toBe(p.id);
     expect(db.profiles[0]).toEqual(p);
+    expect(db.templates).toEqual([]);
   });
   it('keeps the new personal fields empty and in the fact directory', () => {
     const p = emptyProfile();
@@ -116,10 +118,11 @@ describe('local profile schema and backups', () => {
     const original = structuredClone(old);
     const migrated = migrate(old);
     expect(old).toEqual(original);
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
     expect(migrated.activeId).toBe(old.activeId);
     expect(migrated.settings).toEqual(old.settings);
     expect(migrated.mappings).toEqual(old.mappings);
+    expect(migrated.templates).toEqual([]);
     migrated.profiles.forEach((p, index) => {
       const previous = old.profiles[index]!;
       expect(p).toEqual({
@@ -162,6 +165,23 @@ describe('local profile schema and backups', () => {
     const encrypted = encryptedLegacyBackup(old);
     expect(encrypted).not.toContain('林知夏');
     expect(await restoreBackup(encrypted, 'fictional-legacy-password')).toEqual(migrate(old));
+  });
+  it('migrates v2 local data, JSON and encrypted backups without changing existing data', async () => {
+    const current = defaultDatabase();
+    current.profiles[0] = demoProfile();
+    current.activeId = 'demo';
+    current.mappings = legacyDatabase().mappings;
+    current.settings = legacyDatabase().settings;
+    const { templates: _templates, ...base } = current;
+    expect(_templates).toEqual([]);
+    const old = { ...base, schemaVersion: 2 };
+    const original = structuredClone(old);
+    expect(migrate(old)).toEqual(current);
+    expect(await restoreBackup(JSON.stringify(old), '')).toEqual(current);
+    expect(await restoreBackup(encryptedLegacyBackup(old), 'fictional-legacy-password')).toEqual(
+      current,
+    );
+    expect(old).toEqual(original);
   });
   it('rejects future database versions inside encrypted backups', async () => {
     const encrypted = encryptedLegacyBackup({ ...legacyDatabase(), schemaVersion: 99 });

@@ -35,6 +35,7 @@ import {
   type Profile,
   type Section,
 } from '../domain/model';
+import type { FormTemplate } from '../domain/templates';
 import { loadDatabase, readSessionKey, saveDatabase, saveSessionKey } from '../domain/storage';
 import { encryptBackup, restoreBackup } from '../domain/backup';
 import { draftFromText, extractText } from '../domain/import';
@@ -49,7 +50,77 @@ const personalPlaceholders: Partial<Record<keyof Profile['personal'], string>> =
   ethnicity: '例如：汉族',
 };
 
-type View = 'profile' | 'import' | 'mappings' | 'settings';
+type View = 'profile' | 'import' | 'mappings' | 'templates' | 'settings';
+
+function TemplateCard({
+  template,
+  disabled,
+  onRename,
+  onToggle,
+  onDelete,
+}: {
+  template: FormTemplate;
+  disabled: boolean;
+  onRename: (name: string) => void;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  const [name, setName] = useState(template.name);
+  useEffect(() => setName(template.name), [template.name]);
+  return (
+    <section className="entry-card" aria-label={`模板：${template.name}`}>
+      <div className="section-heading">
+        <h3>{template.name}</h3>
+        <span className="tag">{template.enabled ? '已启用' : '已停用'}</span>
+      </div>
+      <p className="muted">
+        {template.origin} · {template.adapter} · 已核对 {template.fields.length} 个字段
+      </p>
+      <label>
+        模板名称
+        <input
+          value={name}
+          maxLength={100}
+          disabled={disabled}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <div className="button-row">
+        <Button
+          variant="secondary"
+          disabled={disabled || !name.trim() || name.trim() === template.name}
+          onClick={() => onRename(name.trim())}
+        >
+          保存名称
+        </Button>
+        <Button variant="secondary" disabled={disabled} onClick={onToggle}>
+          {template.enabled ? '停用模板' : '启用模板'}
+        </Button>
+        <Button variant="ghost" disabled={disabled} onClick={onDelete}>
+          <Trash2 size={15} /> 删除模板
+        </Button>
+      </div>
+      <details>
+        <summary>查看字段与定位依据（{template.fields.length}）</summary>
+        {template.fields.map((field) => (
+          <div className="mapping-row" key={field.id}>
+            <div>
+              <strong>{field.label}</strong>
+              <small>
+                区域：{field.section ? sectionNames[field.section] : '通用资料'} · 控件：
+                {field.kind}
+              </small>
+              <code>{field.path}</code>
+              <small>定位文字：{field.anchors.join('、') || '无'}</small>
+              {field.customProfileId && <small>自定义资料仅在原简历版本中复用</small>}
+            </div>
+          </div>
+        ))}
+      </details>
+    </section>
+  );
+}
+
 function ProfileEditor({ value, onChange }: { value: Profile; onChange: (p: Profile) => void }) {
   function edit(section: Section, index: number, key: string, text: string) {
     onChange({
@@ -284,6 +355,29 @@ export function Dashboard() {
     setDirty(false);
     setMessage('已保存在这台设备');
   }
+  async function updateTemplate(
+    id: string,
+    change: (template: FormTemplate) => FormTemplate | undefined,
+  ) {
+    if (demo) return;
+    const latest = await loadDatabase();
+    const current = latest.templates.find((template) => template.id === id);
+    if (!current) {
+      setDb(latest);
+      throw new Error('此模板已被删除，请查看刷新后的列表');
+    }
+    const updated = change(current);
+    latest.templates = latest.templates.flatMap((template) =>
+      template.id === id
+        ? updated
+          ? [{ ...updated, updatedAt: new Date().toISOString() }]
+          : []
+        : [template],
+    );
+    await saveDatabase(latest);
+    setDb(latest);
+    setMessage(updated ? '模板已更新' : '模板已删除，简历资料和字段记忆已保留');
+  }
   function canLeave(): boolean {
     return !dirty || window.confirm('当前修改尚未保存。是否放弃修改？');
   }
@@ -313,6 +407,7 @@ export function Dashboard() {
     { id: 'profile', title: '我的简历', icon: FileText },
     { id: 'import', title: '导入资料', icon: Import },
     { id: 'mappings', title: '填写记忆', icon: Map },
+    { id: 'templates', title: '表单模板', icon: BookOpen },
     { id: 'settings', title: '数据与设置', icon: Settings2 },
   ];
   return (
@@ -377,7 +472,9 @@ export function Dashboard() {
                     ? '从已有的简历开始。'
                     : view === 'mappings'
                       ? '一次修正，下次记得。'
-                      : '安心保存，自主选择。'}
+                      : view === 'templates'
+                        ? '核对一次，下次复用。'
+                        : '安心保存，自主选择。'}
               </h1>
               <p>
                 {view === 'profile'
@@ -386,7 +483,9 @@ export function Dashboard() {
                     ? '文件在设备上提取，核对后再保存到资料库。'
                     : view === 'mappings'
                       ? '你在填写预览中确认的字段对应关系，只保存在本机。'
-                      : '管理备份、可选 AI 和这台设备上的资料。'}
+                      : view === 'templates'
+                        ? '保存经核对的表单结构，填写时从当前简历读取资料。'
+                        : '管理备份、可选 AI 和这台设备上的资料。'}
               </p>
             </div>
             <span className="edition">
@@ -647,6 +746,58 @@ export function Dashboard() {
                   ))}
                 </section>
               )}
+              {view === 'templates' && (
+                <section className="card">
+                  <div className="section-heading">
+                    <h2>
+                      <BookOpen size={19} /> 本地表单模板{' '}
+                      <span className="count">{db.templates.length}</span>
+                    </h2>
+                    <Button
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => void run(async () => setDb(await loadDatabase()))}
+                    >
+                      刷新
+                    </Button>
+                  </div>
+                  <p className="muted">
+                    模板保存字段含义和定位依据，不保存填写内容。停用后不再参与匹配；重新学习请在目标网页的插件侧栏操作。
+                  </p>
+                  {!db.templates.length && (
+                    <div className="inline-empty">
+                      在插件侧栏核对识别结果并保存表单模板后，会出现在这里。
+                    </div>
+                  )}
+                  {db.templates.map((template) => (
+                    <TemplateCard
+                      key={template.id}
+                      template={template}
+                      disabled={busy || demo}
+                      onRename={(name) =>
+                        void run(() =>
+                          updateTemplate(template.id, (current) => ({ ...current, name })),
+                        )
+                      }
+                      onToggle={() =>
+                        void run(() =>
+                          updateTemplate(template.id, (current) => ({
+                            ...current,
+                            enabled: !current.enabled,
+                          })),
+                        )
+                      }
+                      onDelete={() =>
+                        void run(async () => {
+                          if (!confirm(`删除模板“${template.name}”？此操作不会删除简历资料。`))
+                            return;
+                          await updateTemplate(template.id, () => undefined);
+                        })
+                      }
+                    />
+                  ))}
+                </section>
+              )}
               {view === 'settings' && (
                 <>
                   <section className="card">
@@ -700,7 +851,7 @@ export function Dashboard() {
                                 const restored = await restoreBackup(await file.text(), password);
                                 if (
                                   !confirm(
-                                    `恢复 ${restored.profiles.length} 份简历，将替换当前全部资料与映射。继续？`,
+                                    `恢复 ${restored.profiles.length} 份简历，将替换当前全部资料、映射与表单模板。继续？`,
                                   )
                                 )
                                   return;
@@ -855,7 +1006,9 @@ export function Dashboard() {
                   </section>
                   <section className="card danger-zone">
                     <h2>清空本机数据</h2>
-                    <p className="muted">删除所有简历、字段记忆与设置，无法撤销。先导出备份。</p>
+                    <p className="muted">
+                      删除所有简历、字段记忆、表单模板与设置，无法撤销。先导出备份。
+                    </p>
                     <Button
                       variant="danger"
                       disabled={busy || demo}
