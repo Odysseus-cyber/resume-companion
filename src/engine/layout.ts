@@ -1,5 +1,13 @@
 import { visible } from './labels';
 import type { FieldKind, LayoutRect, LayoutSnapshot } from './types';
+import {
+  choicePopups,
+  choiceSupportReason,
+  choiceTriggerSelector,
+  deduplicateChoices,
+  isChoiceTrigger,
+} from './widgets/detect';
+import { readWidgetValue } from './widgets/core';
 
 export type LayoutNode = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement;
 export interface LayoutCandidate {
@@ -13,8 +21,7 @@ export interface LayoutCollection {
   /** Original text anchors remain local; only layout may cross the message boundary. */
   textNodes: Node[];
 }
-const selector =
-  'input,textarea,select,[role="combobox"],[role="textbox"],[role="listbox"],[role="radio"],[role="checkbox"],[role="switch"],[role="spinbutton"],[contenteditable]:not([contenteditable="false"])';
+const selector = `input,textarea,select,${choiceTriggerSelector},[role="textbox"],[role="listbox"],[role="radio"],[role="checkbox"],[role="switch"],[role="spinbutton"],[contenteditable]:not([contenteditable="false"])`;
 const excludedText = `${selector},option,[role="option"],script,style,noscript,template,button,[data-resume-companion]`;
 const round = (n: number) => Math.round(n * 10) / 10;
 function rect(element: Element): LayoutRect {
@@ -53,6 +60,7 @@ export function visibleText(node: Node, parent: Element): boolean {
   return range.getClientRects().length > 0;
 }
 function occupied(node: LayoutNode): boolean {
+  if (isChoiceTrigger(node)) return !!readWidgetValue(node);
   if (node instanceof HTMLInputElement && ['checkbox', 'radio'].includes(node.type))
     return node.checked;
   if (node instanceof HTMLSelectElement && node.multiple) return node.selectedOptions.length > 0;
@@ -65,15 +73,14 @@ function occupied(node: LayoutNode): boolean {
   return !!node.textContent?.trim();
 }
 function classify(node: LayoutNode): Pick<LayoutCandidate, 'kind' | 'reason'> {
+  if (isChoiceTrigger(node)) {
+    const reason = choiceSupportReason(node);
+    return reason ? { kind: 'unsupported', reason } : { kind: 'combobox' };
+  }
   if (node.matches(':disabled') || node.getAttribute('aria-disabled') === 'true')
     return { kind: 'unsupported', reason: '控件已禁用' };
   if ((node as HTMLInputElement).readOnly || node.getAttribute('aria-readonly') === 'true')
     return { kind: 'unsupported', reason: '只读控件需手动操作' };
-  if (node.getAttribute('role') === 'combobox') {
-    return node.hasAttribute('aria-controls') || node.hasAttribute('aria-owns')
-      ? { kind: 'combobox' }
-      : { kind: 'unsupported', reason: '无法确认自定义下拉菜单范围' };
-  }
   if (node instanceof HTMLInputElement) {
     if (['file', 'password', 'range', 'color'].includes(node.type))
       return { kind: 'unsupported', reason: '此控件需在网页中手动操作' };
@@ -88,9 +95,12 @@ function classify(node: LayoutNode): Pick<LayoutCandidate, 'kind' | 'reason'> {
 
 /** Captures layout independently of resume dictionaries and label association heuristics. */
 export function collectLayout(): LayoutCollection {
+  const popups = choicePopups();
+  const inPopup = (node: Node) => [...popups].some((popup) => popup.contains(node));
   const all = Array.from(document.querySelectorAll<LayoutNode>(selector)).filter(
     (node) =>
       visible(node) &&
+      !inPopup(node) &&
       !node.closest('[data-resume-companion]') &&
       !(
         node instanceof HTMLInputElement &&
@@ -98,14 +108,17 @@ export function collectLayout(): LayoutCollection {
       ),
   );
   // An accessible widget wrapping a native control is represented once by the native control.
-  const controls = all.filter(
+  const choices = deduplicateChoices(all);
+  const controls = choices.filter(
     (node) =>
       !(
+        !isChoiceTrigger(node) &&
         !(
           node instanceof HTMLInputElement ||
           node instanceof HTMLTextAreaElement ||
           node instanceof HTMLSelectElement
-        ) && all.some((child) => child !== node && node.contains(child))
+        ) &&
+        choices.some((child) => child !== node && node.contains(child))
       ),
   );
   if (controls.length > 500) throw new Error('页面候选控件超过 500 个，请缩小识别区域后重试');
@@ -179,7 +192,14 @@ export function collectLayout(): LayoutCollection {
     while ((node = walker.nextNode())) {
       const parent = node.parentElement;
       const text = node.textContent?.replace(/\s+/g, ' ').trim();
-      if (!parent || !text || parent.closest(excludedText) || !visibleText(node, parent)) continue;
+      if (
+        !parent ||
+        !text ||
+        inPopup(node) ||
+        parent.closest(excludedText) ||
+        !visibleText(node, parent)
+      )
+        continue;
       // Choice labels are option values, including labels associated via for=.
       const choiceLabel = parent.closest('label');
       if (

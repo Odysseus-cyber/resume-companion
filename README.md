@@ -22,12 +22,16 @@
 
 ## 获取源码
 
-项目仓库：[Odysseus-cyber/resume-companion](https://github.com/Odysseus-cyber/resume-companion)。当前版本为 **0.2.3 开发预览**；公开下载以 [Releases](https://github.com/Odysseus-cyber/resume-companion/releases) 中实际发布的版本为准，草稿 Release 仅维护者可见。
+项目仓库：[Odysseus-cyber/resume-companion](https://github.com/Odysseus-cyber/resume-companion)。当前开发版本为 **0.2.4 开发预览**，已归档基线为 `v0.2.3`；公开下载以 [Releases](https://github.com/Odysseus-cyber/resume-companion/releases) 中实际发布的版本为准，草稿 Release 仅维护者可见。
 
 ```sh
 git clone https://github.com/Odysseus-cyber/resume-companion.git
 cd resume-companion
 ```
+
+## 选择控件（0.2.4 开发版）
+
+支持明确关联 ARIA 弹层的只读选择入口、异步单选列表和省市区树。资料值在本地匹配和选择；有明确清空操作时可撤销，否则提示手动恢复。地区资料建议填写完整层级，如“浙江省/杭州市/余杭区”；只有城市时不推断区县。缺少弹层关联、纯视觉式分栏组件及哈啰实际页面仍需专门适配，详见 [支持范围](docs/support.md)。
 
 ## 本地开发与安装
 

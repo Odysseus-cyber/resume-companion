@@ -4,20 +4,51 @@ import { collectLayout, visibleText, type LayoutCollection } from './layout';
 import { getAdapter } from './adapters';
 import { matchField, normalize } from './matcher';
 import { labelInfo, labelOf, staticText, visible } from './labels';
+import {
+  choicePopups,
+  choiceSupportReason,
+  choiceTriggerSelector,
+  deduplicateChoices,
+  isChoiceTrigger,
+  widgetMembers,
+} from './widgets/detect';
+import { readWidgetValue, type WidgetContext, type WidgetResult } from './widgets/core';
+import { fillListbox } from './widgets/select';
+import { fillRegion } from './widgets/region';
 
 type Control = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLElement;
 interface Ref {
   nodes: Control[];
   field: Field;
+  widgetNodes?: HTMLElement[];
 }
 interface Undo {
   ref: Ref;
   before: string[];
   after: string[];
+  restore?: () => Promise<void>;
 }
 const sensitive =
   /密码|验证码|身份证|证件号|护照|银行卡|隐私|同意|承诺|声明|条款|password|captcha|consent|agreement|passport|ssn|one-time-code|verification.?code/i;
-const controlSelector = 'input,textarea,select,[role="combobox"]';
+const controlSelector = `input,textarea,select,${choiceTriggerSelector}`;
+function widgetMembersUnchanged(ref: Ref): boolean {
+  if (!ref.widgetNodes) return true;
+  const members = widgetMembers(ref.nodes[0]!);
+  return (
+    members.length === ref.widgetNodes.length &&
+    members.every((member, index) => member === ref.widgetNodes![index])
+  );
+}
+function unavailable(node: Control): boolean {
+  return (
+    !node.isConnected ||
+    !visible(node) ||
+    node.matches(':disabled') ||
+    node.getAttribute('aria-disabled') === 'true' ||
+    node.getAttribute('aria-readonly') === 'true' ||
+    (!!(node as HTMLInputElement).readOnly && !isChoiceTrigger(node))
+  );
+}
 function headingOf(parent: Element): string {
   const candidates = Array.from(
     parent.querySelectorAll('legend,h1,h2,h3,h4,h5,h6,[role="heading"]'),
@@ -68,6 +99,7 @@ function sectionOf(el: Control, selectors: string[]): { section?: Section; group
   return {};
 }
 function raw(el: Control): string {
+  if (isChoiceTrigger(el)) return readWidgetValue(el);
   if (el instanceof HTMLInputElement && ['radio', 'checkbox'].includes(el.type))
     return el.checked ? '1' : '0';
   if (el instanceof HTMLSelectElement && el.multiple)
@@ -157,6 +189,7 @@ function controlShape(node: Control): string {
       'aria-labelledby',
       'aria-controls',
       'aria-owns',
+      'aria-haspopup',
       'aria-disabled',
       'aria-readonly',
       'contenteditable',
@@ -168,6 +201,17 @@ function controlShape(node: Control): string {
     ].map((name) => node.getAttribute(name)),
     node.matches(':disabled'),
     (node as HTMLInputElement).readOnly,
+    isChoiceTrigger(node)
+      ? widgetMembers(node).map((member) => [
+          member.tagName,
+          member.getAttribute('type'),
+          member.getAttribute('name'),
+          member.getAttribute('id'),
+          member.matches(':disabled'),
+          member.getAttribute('aria-readonly'),
+          (member as HTMLInputElement).readOnly,
+        ])
+      : null,
     node instanceof HTMLSelectElement
       ? Array.from(node.options, (option) => [option.text, option.value, option.disabled])
       : null,
@@ -255,7 +299,11 @@ export class FormEngine {
         blocked,
         supportReason: candidate.reason || (blocked ? '敏感或确认字段需手动填写' : undefined),
       };
-      const ref: Ref = { nodes: candidate.nodes, field };
+      const ref: Ref = {
+        nodes: candidate.nodes,
+        field,
+        widgetNodes: isChoiceTrigger(node) ? widgetMembers(node) : undefined,
+      };
       field.value =
         node instanceof HTMLInputElement && ['password', 'file'].includes(node.type)
           ? ''
@@ -337,11 +385,16 @@ export class FormEngine {
     const isBefore = !!(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
     if (wasBefore !== isBefore) throw new Error('字段排列顺序已变化，请重新识别');
   }
-  private validateLayoutTarget(token: string, id: string, evidence: string[] = []) {
+  private validateLayoutTarget(
+    token: string,
+    id: string,
+    evidence: string[] = [],
+    checkValue = true,
+  ) {
     const state = this.layoutSession(token);
     const ref = this.refs.get(id);
     const target = state.targets.get(id);
-    if (!ref || !target) throw new Error('字段已变化，请重新识别');
+    if (!ref || !target || !widgetMembersUnchanged(ref)) throw new Error('字段已变化，请重新识别');
     const first = ref.nodes[0]!;
     if (
       first instanceof HTMLInputElement &&
@@ -379,7 +432,7 @@ export class FormEngine {
         if (peer.isConnected) this.validateOrder(peer, node);
       }
     });
-    if (JSON.stringify(ref.nodes.map(raw)) !== JSON.stringify(state.values.get(id)))
+    if (checkValue && JSON.stringify(ref.nodes.map(raw)) !== JSON.stringify(state.values.get(id)))
       throw new Error('字段内容已变化，已保留网页当前内容');
     for (const textId of new Set([...target.evidence, ...evidence]))
       this.validateAnchor(textId, ref.nodes[0]!);
@@ -395,14 +448,16 @@ export class FormEngine {
     this.token = crypto.randomUUID();
     const adapter = getAdapter(url);
     const groups: Record<Section, Element[]> = { education: [], experience: [], projects: [] };
-    const candidates = Array.from(
-      document.querySelectorAll<Control>('input,textarea,select,[role="combobox"]'),
-    ).filter(
-      (el) =>
-        visible(el) &&
-        !(el as HTMLInputElement).disabled &&
-        !(el as HTMLInputElement).readOnly &&
-        !el.closest('[data-resume-companion]'),
+    const popups = choicePopups();
+    const candidates = deduplicateChoices(
+      Array.from(document.querySelectorAll<Control>(controlSelector)).filter(
+        (el) =>
+          visible(el) &&
+          !(el as HTMLInputElement).disabled &&
+          (!(el as HTMLInputElement).readOnly || isChoiceTrigger(el)) &&
+          ![...popups].some((popup) => popup.contains(el)) &&
+          !el.closest('[data-resume-companion]'),
+      ),
     );
     const consumed = new Set<Control>();
     const signatures = new Map<string, number>();
@@ -418,7 +473,7 @@ export class FormEngine {
           ? 'textarea'
           : el instanceof HTMLSelectElement
             ? 'select'
-            : el.getAttribute('role') === 'combobox'
+            : isChoiceTrigger(el)
               ? 'combobox'
               : el instanceof HTMLInputElement &&
                   ['date', 'month', 'radio', 'checkbox'].includes(el.type)
@@ -475,6 +530,7 @@ export class FormEngine {
       const base = `${new URL(url).pathname}:${formContext}:${section || 'personal'}:${index}:${kind}:${normalize(label)}:${el.getAttribute('name') || ''}`;
       const occurrence = signatures.get(base) || 0;
       signatures.set(base, occurrence + 1);
+      const supportReason = isChoiceTrigger(el) ? choiceSupportReason(el) : undefined;
       const field: Field = {
         id: `f${this.refs.size}`,
         signature: `${base}:${occurrence}`,
@@ -487,7 +543,9 @@ export class FormEngine {
         autocomplete: el.getAttribute('autocomplete')?.split(' ').pop() || '',
         section,
         index,
+        supportReason,
         blocked:
+          !!supportReason ||
           sensitive.test(
             [label, ...info.context, el.getAttribute('name'), el.getAttribute('autocomplete')]
               .filter(Boolean)
@@ -495,7 +553,11 @@ export class FormEngine {
           ) ||
           (kind === 'checkbox' && nodes.length === 1),
       };
-      const ref = { nodes, field };
+      const ref: Ref = {
+        nodes,
+        field,
+        widgetNodes: isChoiceTrigger(el) ? widgetMembers(el) : undefined,
+      };
       field.value = current(ref);
       // Empty multi-select is empty, not a populated value.
       if (field.value === '[]') field.value = '';
@@ -556,16 +618,7 @@ export class FormEngine {
           }
         }
         const ref = this.refs.get(item.id);
-        if (
-          !ref ||
-          ref.nodes.some(
-            (n) =>
-              !n.isConnected ||
-              !visible(n) ||
-              (n as HTMLInputElement).disabled ||
-              (n as HTMLInputElement).readOnly,
-          )
-        ) {
+        if (!ref || !widgetMembersUnchanged(ref) || ref.nodes.some(unavailable)) {
           results.push({ id: item.id, status: 'review', reason: '字段已变化，请重新识别' });
           continue;
         }
@@ -580,18 +633,18 @@ export class FormEngine {
         }
         const before = ref.nodes.map(raw);
         try {
-          await this.write(ref, item.value);
+          const outcome = await this.write(ref, item, token, verifyLayout);
           if (ref.nodes.some((node) => !node.isConnected))
             throw new Error('填写后字段已重新渲染，请在网页中核对当前值');
           const after = ref.nodes.map(raw);
           if (JSON.stringify(before) === JSON.stringify(after))
             throw new Error('网页没有接受填写值');
-          batch.push({ ref, before, after });
+          batch.push({ ref, before, after, restore: outcome?.undo });
           results.push({
             id: item.id,
             status: 'filled',
             reason:
-              ref.field.kind === 'combobox'
+              ref.field.kind === 'combobox' && !outcome?.undo
                 ? '已填写并回读；自定义下拉撤销需手动恢复'
                 : '已填写并回读，请核对',
           });
@@ -616,21 +669,81 @@ export class FormEngine {
       this.busy = false;
     }
   }
-  private async write(ref: Ref, input: string) {
+  private async write(
+    ref: Ref,
+    item: PlanItem,
+    token: string,
+    verifyLayout: boolean,
+  ): Promise<WidgetResult | undefined> {
     const el = ref.nodes[0]!;
+    const input = item.value;
     if (ref.field.kind === 'combobox') {
-      el.click();
-      await tick(100);
-      const popupId = el.getAttribute('aria-controls') || el.getAttribute('aria-owns');
-      const popup = popupId ? document.getElementById(popupId) : null;
-      if (!popup) throw new Error('无法确认下拉菜单范围，请手动选择');
-      const options = Array.from(popup.querySelectorAll<HTMLElement>('[role="option"]')).filter(
-        (o) => visible(o) && equivalent(o.textContent || '', input),
+      const initialUrl = location.href;
+      const parents = ancestors(el);
+      const shape = controlShape(el);
+      let interrupted = false;
+      const onUserInput = (event: Event) => {
+        if (event.isTrusted) interrupted = true;
+      };
+      // Native radio.click() produces trusted input/change events as part of our
+      // own action. Detect user intent instead of mistaking those for interruption.
+      const events = ['pointerdown', 'keydown', 'beforeinput', 'paste', 'drop'];
+      const observe = () =>
+        events.forEach((event) => document.addEventListener(event, onUserInput, true));
+      const stop = () =>
+        events.forEach((event) => document.removeEventListener(event, onUserInput, true));
+      const context: WidgetContext = {
+        path: item.path,
+        isCurrent: () => {
+          if (
+            interrupted ||
+            token !== this.token ||
+            location.href !== initialUrl ||
+            unavailable(el) ||
+            !widgetMembersUnchanged(ref) ||
+            !sameAncestors(el, parents) ||
+            controlShape(el) !== shape
+          )
+            return false;
+          if (verifyLayout) {
+            try {
+              this.validateLayoutTarget(token, item.id, item.evidence, false);
+            } catch {
+              return false;
+            }
+          }
+          return true;
+        },
+      };
+      const popupId = (
+        el.getAttribute('aria-controls') ||
+        el.getAttribute('aria-owns') ||
+        ''
+      ).trim();
+      const popupRole = document.getElementById(popupId)?.getAttribute('role');
+      const hierarchical = ['dialog', 'tree'].includes(
+        el.getAttribute('aria-haspopup') || popupRole || '',
       );
-      if (options.length !== 1) throw new Error('下拉选项不唯一或未找到');
-      options[0]!.click();
-      await tick(100);
-      if (!equivalent(raw(el), input)) throw new Error('自定义下拉需人工核对');
+      const region = ['personal.city', 'personal.householdLocation'].includes(item.path);
+      observe();
+      try {
+        if (hierarchical && !region) throw new Error('此弹窗选择器暂不支持自动操作，请手动选择');
+        const result = await (hierarchical ? fillRegion : fillListbox)(el, input, context);
+        if (!result.undo) return result;
+        return {
+          undo: async () => {
+            interrupted = false;
+            observe();
+            try {
+              await result.undo!();
+            } finally {
+              stop();
+            }
+          },
+        };
+      } finally {
+        stop();
+      }
     } else if (el instanceof HTMLSelectElement) {
       const wanted = el.multiple
         ? input
@@ -690,6 +803,7 @@ export class FormEngine {
       for (const h of [...this.history].reverse()) {
         if (
           h.ref.nodes.some((n) => !n.isConnected) ||
+          !widgetMembersUnchanged(h.ref) ||
           JSON.stringify(h.ref.nodes.map(raw)) !== JSON.stringify(h.after)
         ) {
           results.push({
@@ -700,8 +814,10 @@ export class FormEngine {
           continue;
         }
         try {
-          if (h.ref.field.kind === 'combobox') throw new Error('自定义下拉需手动恢复');
-          h.ref.nodes.forEach((n, i) => setRaw(n, h.before[i]!));
+          if (h.ref.field.kind === 'combobox') {
+            if (!h.restore) throw new Error('自定义下拉需手动恢复');
+            await h.restore();
+          } else h.ref.nodes.forEach((n, i) => setRaw(n, h.before[i]!));
           await tick();
           if (JSON.stringify(h.ref.nodes.map(raw)) !== JSON.stringify(h.before))
             throw new Error('网页未接受恢复值');
